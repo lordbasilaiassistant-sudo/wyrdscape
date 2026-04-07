@@ -950,10 +950,11 @@ function handleLeftClick(event) {
   GameState.hud.hideContextMenu();
   // Raycast all scene children
   const hits = GameState.input.screenToWorld(event, GameState.scene);
+  if (!hits || hits.length === 0) return;
   const pick = pickFirstInteractable(hits);
 
-  // Pending firemaking? Treat the next ground click as the fire site
-  if (GameState.firemakePending && (!pick || pick.kind === undefined)) {
+  // Pending firemaking? Treat the next ground click as the fire site.
+  if (GameState.firemakePending && !pick) {
     const w = hits[0]?.point;
     if (w) {
       const t = worldToTile(w.x, w.z);
@@ -963,27 +964,28 @@ function handleLeftClick(event) {
     }
   }
 
-  if (!pick) return;
-
-  if (pick.kind === 'monster') {
-    beginAttack(pick.entity);
-  } else if (pick.kind === 'npc') {
-    beginTalk(pick.entity);
-  } else if (pick.kind === 'resource') {
-    beginResourceAction(pick.entity);
-  } else if (pick.kind === 'loot') {
-    beginPickup(pick.entity);
-  } else {
-    // Ground click — walk
-    const w = hits[0]?.point;
-    if (!w) return;
-    const t = worldToTile(w.x, w.z);
-    walkTo(t.x, t.z);
-    // Cyan tile indicator at that tile
-    const tw = tileToWorld(t.x, t.z);
-    Effects.createTileSelectIndicator(GameState.scene,
-      new THREE.Vector3(tw.x, 0.05, tw.z), TILE_SIZE * 0.9);
+  // Interactable hit → dispatch by kind.
+  if (pick) {
+    if (pick.kind === 'monster')      beginAttack(pick.entity);
+    else if (pick.kind === 'npc')     beginTalk(pick.entity);
+    else if (pick.kind === 'resource')beginResourceAction(pick.entity);
+    else if (pick.kind === 'loot')    beginPickup(pick.entity);
+    return;
   }
+
+  // No interactable → walk to whatever the raycast hit (terrain, etc.).
+  // pickFirstInteractable returns null on ground hits, so the previous
+  // `if (!pick) return` here was killing all walk-clicks.
+  const w = hits[0]?.point;
+  if (!w) return;
+  const t = worldToTile(w.x, w.z);
+  if (t.x < 0 || t.x >= WORLD_SIZE || t.z < 0 || t.z >= WORLD_SIZE) return;
+  walkTo(t.x, t.z);
+
+  // Cyan tile indicator at that tile.
+  const tw = tileToWorld(t.x, t.z);
+  Effects.createTileSelectIndicator(GameState.scene,
+    new THREE.Vector3(tw.x, 0.05, tw.z), TILE_SIZE * 0.9);
 }
 
 // Dispatch resource left-clicks based on the kind tagged at spawn.
