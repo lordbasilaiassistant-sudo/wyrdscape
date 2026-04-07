@@ -48,6 +48,7 @@ import {
   createLogDrop, createCoinDrop, createMeatDrop, createBoneDrop,
 } from './graphics/models.js';
 import * as Effects from './graphics/effects.js';
+import { createAnimator } from './graphics/animations.js';
 
 // ---- data -----------------------------------------------------
 import ITEMS from './data/items.js';
@@ -143,6 +144,7 @@ export const GameState = {
   // player
   player: null,         // plain data object (PlayerState)
   playerMesh: null,     // THREE.Group (createPlayerModel)
+  playerAnimator: null, // procedural animator (graphics/animations.js)
   playerPath: [],       // remaining tile steps
   playerTarget: null,   // current movement target tile
   playerAction: null,   // {type:'attack'|'chop'|'talk', targetId}
@@ -308,6 +310,7 @@ function startGame() {
   });
   scene.add(playerMesh);
   GameState.playerMesh = playerMesh;
+  GameState.playerAnimator = createAnimator(playerMesh);
 
   // ---- camera + input ----
   GameState.camera = createCamera(threeCam, playerMesh);
@@ -375,6 +378,10 @@ function createSystems() {
 
         // Face target
         facePlayerAt(target.x, target.z);
+
+        // Trigger attack animation on player and target
+        GameState.playerAnimator?.setState('attack');
+        target.animator?.setState('attack');
 
         // Resolve attack
         const def = MONSTERS[target.dataId] || {};
@@ -588,6 +595,7 @@ function spawnEntities(worldDef, scene) {
         name: def?.name || 'Villager',
         ambient: !def,
         mesh, x, z,
+        animator: createAnimator(mesh),
       });
     }
     else if (type === 'tree' || type === 'oakTree') {
@@ -634,6 +642,7 @@ function spawnMonster(dataId, x, z, scene) {
     hp: def.hp,
     maxHp: def.hp,
     wanderCD: Math.floor(Math.random() * 5),
+    animator: createAnimator(mesh),
   });
 }
 
@@ -1029,6 +1038,8 @@ function stepPlayerLogic() {
   if (Math.abs(dx) + Math.abs(dz) > 0.001) {
     GameState.playerMesh.rotation.y = Math.atan2(dx, dz);
   }
+  // Animation: switch to walk cycle while a tween is active
+  GameState.playerAnimator?.setState('walk');
 }
 
 // Per-frame: smoothly interpolate the player mesh along its current
@@ -1042,6 +1053,11 @@ function tweenPlayerVisual() {
   if (t >= 1) {
     GameState.playerMesh.position.set(tw.toX, 0, tw.toZ);
     GameState.playerTween = null;
+    // If no further tiles queued, return to idle (else next stepPlayerLogic
+    // tick will set walk again).
+    if (GameState.playerPath.length === 0) {
+      GameState.playerAnimator?.setState('idle');
+    }
   }
 }
 
@@ -1063,6 +1079,12 @@ function facePlayerAt(tx, tz) {
 function tickMonsters() {
   for (const m of GameState.monsters) {
     if (m.hp <= 0) continue;
+    // Decay walk-state set by previous tick: monster has finished its
+    // 1-tile move tween (~LOGIC_TICK_MS) so return to idle unless we
+    // start a new move below.
+    if (m.animator && m.animator.state === 'walk') {
+      m.animator.setState('idle');
+    }
     m.wanderCD = (m.wanderCD || 0) - 1;
     if (m.wanderCD > 0) continue;
     m.wanderCD = 5 + Math.floor(Math.random() * 5); // 5..9 ticks (~3..5s)
@@ -1095,10 +1117,19 @@ function tickMonsters() {
 }
 
 function moveMonsterTo(m, tx, tz) {
-  m.x = tx; m.z = tz;
+  // Face movement direction before snapping position
+  const fromW = { x: m.mesh.position.x, z: m.mesh.position.z };
   const pw = tileToWorld(tx, tz);
+  const dx = pw.x - fromW.x;
+  const dz = pw.z - fromW.z;
+  if (Math.abs(dx) + Math.abs(dz) > 0.001) {
+    m.mesh.rotation.y = Math.atan2(dx, dz);
+  }
+  m.x = tx; m.z = tz;
   m.mesh.position.x = pw.x;
   m.mesh.position.z = pw.z;
+  // Animation: trigger walk cycle for this tick (decayed at start of next tick)
+  m.animator?.setState('walk');
 }
 
 // =============================================================
@@ -1177,6 +1208,10 @@ function tick() {
 
   // ---- per-frame visuals (smooth between ticks) ----
   tweenPlayerVisual();
+  // Procedural character animations (walk cycle, attack, idle bob)
+  GameState.playerAnimator?.update(dt, GameState.elapsed);
+  for (const m of GameState.monsters) m.animator?.update(dt, GameState.elapsed);
+  for (const n of GameState.npcs)     n.animator?.update(dt, GameState.elapsed);
   if (GameState.terrain?.update) GameState.terrain.update(dt);
   Effects.update(dt);
   if (GameState.ui?.update) GameState.ui.update(dt, GameState.elapsed);
