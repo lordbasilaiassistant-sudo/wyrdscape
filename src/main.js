@@ -432,6 +432,13 @@ async function startGame() {
   const player = savedPlayer || defaultPlayerState();
   // Migrate legacy camelCase inventory items if loaded from old saves
   normalizeInventory(player);
+  // Migrate skills: ensure old saves get the new gathering/cooking skill entries
+  if (player.skills) {
+    const skillDefaults = defaultSkills();
+    for (const k of Object.keys(skillDefaults)) {
+      if (!player.skills[k]) player.skills[k] = skillDefaults[k];
+    }
+  }
   // Always use defined spawn point if no save exists
   if (!savedPlayer) {
     player.x = worldDef.spawnPoint.x;
