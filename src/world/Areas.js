@@ -175,6 +175,40 @@ export function defineWorld() {
     spawns.push({ x, z, type: 'goblin' });
   }
 
+  // ---- Quarry (SW of goblin camp): 5 rock nodes ----
+  // Small cluster of mineable rocks on the dirt south-east of
+  // the bridge approach. Mix copper / tin / iron so the player
+  // has variety from level 1.
+  const rockPositions = [
+    { x: 33, z: 38, rock: 'copper' },
+    { x: 34, z: 39, rock: 'copper' },
+    { x: 32, z: 40, rock: 'tin' },
+    { x: 35, z: 41, rock: 'tin' },
+    { x: 33, z: 42, rock: 'iron' },
+  ];
+  // Stamp dirt under the rocks so the area reads as a quarry
+  for (const { x, z } of rockPositions) {
+    setTile(x, z, TILE_TYPES.DIRT);
+  }
+  for (const { x, z, rock } of rockPositions) {
+    spawns.push({ x, z, type: 'rock', rock });
+  }
+
+  // ---- Fishing spots: 3 along the river bank (east side) ----
+  // Spots sit on the actual water tile so the player walks up
+  // to column 29 (dirt approach) to fish them. Players left-
+  // click the spot, then walk to the adjacent land tile.
+  const fishingPositions = [
+    { x: 28, z: 18 },
+    { x: 28, z: 25 },
+    { x: 28, z: 38 },
+  ];
+  for (const { x, z } of fishingPositions) {
+    spawns.push({ x, z, type: 'fishingSpot' });
+    // Make sure the adjacent east tile is walkable dirt approach
+    setTile(29, z, TILE_TYPES.DIRT);
+  }
+
   // ----------------------------------------------------------
   // Spawn point: middle of starter town
   // ----------------------------------------------------------

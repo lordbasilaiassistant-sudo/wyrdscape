@@ -36,6 +36,10 @@ export function defaultSkills() {
     defence:     { xp: 0,    level: 1 },
     hitpoints:   { xp: 1154, level: 10 },
     woodcutting: { xp: 0,    level: 1 },
+    mining:      { xp: 0,    level: 1 },
+    fishing:     { xp: 0,    level: 1 },
+    cooking:     { xp: 0,    level: 1 },
+    firemaking:  { xp: 0,    level: 1 },
   };
 }
 

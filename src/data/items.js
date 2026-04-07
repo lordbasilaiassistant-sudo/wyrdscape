@@ -36,6 +36,86 @@ export const ITEMS = {
     levelReq: 45
   },
 
+  // ─────────────── Ores (Mining) ───────────────
+  copper_ore: {
+    id: 'copper_ore',
+    name: 'Copper Ore',
+    description: 'A chunk of reddish copper ore, fresh from a rock face.',
+    value: 3,
+    stackable: false,
+    levelReq: 1
+  },
+  tin_ore: {
+    id: 'tin_ore',
+    name: 'Tin Ore',
+    description: 'A dull gray lump of tin ore. Smelts down alongside copper.',
+    value: 3,
+    stackable: false,
+    levelReq: 1
+  },
+  iron_ore: {
+    id: 'iron_ore',
+    name: 'Iron Ore',
+    description: 'A heavy lump of rust-streaked iron ore.',
+    value: 17,
+    stackable: false,
+    levelReq: 15
+  },
+
+  // ─────────────── Raw Fish (Fishing) ───────────────
+  raw_shrimp: {
+    id: 'raw_shrimp',
+    name: 'Raw Shrimp',
+    description: 'A handful of tiny river shrimp, still wet.',
+    value: 2,
+    stackable: false
+  },
+  raw_trout: {
+    id: 'raw_trout',
+    name: 'Raw Trout',
+    description: 'A speckled river trout. Needs cooking before it is edible.',
+    value: 18,
+    stackable: false
+  },
+  raw_salmon: {
+    id: 'raw_salmon',
+    name: 'Raw Salmon',
+    description: 'A silver-pink salmon. Prized among river folk.',
+    value: 32,
+    stackable: false
+  },
+  cooked_shrimp: {
+    id: 'cooked_shrimp',
+    name: 'Fire-Boiled Shrimp',
+    description: 'Shrimp boiled pink over open flame. Small but filling.',
+    value: 8,
+    stackable: false,
+    heal: 3
+  },
+  cooked_trout: {
+    id: 'cooked_trout',
+    name: 'Smoked Trout',
+    description: 'Trout smoked over willow chips until the flesh flakes.',
+    value: 40,
+    stackable: false,
+    heal: 7
+  },
+  cooked_salmon: {
+    id: 'cooked_salmon',
+    name: 'Fire-Roasted Salmon',
+    description: 'Salmon crisped over hot coals. Rich and sustaining.',
+    value: 70,
+    stackable: false,
+    heal: 9
+  },
+  burnt_fish: {
+    id: 'burnt_fish',
+    name: 'Burnt Fish',
+    description: 'A blackened, inedible husk. You should have watched it.',
+    value: 0,
+    stackable: false
+  },
+
   // ─────────────── Food (Cooking / Healing) ───────────────
   raw_beef: {
     id: 'raw_beef',

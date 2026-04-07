@@ -874,6 +874,66 @@ function wireClickHandlers() {
   GameState.input.setRightClickHandler((event) => {
     handleRightClick(event);
   });
+
+  // Inventory left-click: eat (food) or use (raw food → cook prompt)
+  document.addEventListener('inventory:slot-click', (ev) => {
+    const { slot, item } = ev.detail || {};
+    if (slot == null) return;
+    const realSlot = GameState.player.inventory[slot];
+    if (!realSlot) return;
+    const def = ITEMS[realSlot.id];
+    if (!def) return;
+    if (def.heal) {
+      GameState.systems.inventory.eat(slot);
+    }
+  });
+
+  // Inventory right-click: open a small action menu
+  document.addEventListener('inventory:slot-right-click', (ev) => {
+    const { slot, x, y } = ev.detail || {};
+    if (slot == null) return;
+    const realSlot = GameState.player.inventory[slot];
+    if (!realSlot) return;
+    const def = ITEMS[realSlot.id];
+    if (!def) return;
+
+    const options = [];
+    let header = def.name || realSlot.id;
+
+    if (def.heal) {
+      options.push({
+        label: 'Eat ' + header,
+        color: 'yellow',
+        action: () => GameState.systems.inventory.eat(slot),
+      });
+    }
+    if (COOKING_RECIPES[realSlot.id]) {
+      options.push({
+        label: 'Cook ' + header,
+        color: 'yellow',
+        action: () => beginCook(slot),
+      });
+    }
+    if (FIREMAKING_LOGS[realSlot.id]) {
+      options.push({
+        label: 'Light fire',
+        color: 'yellow',
+        action: () => {
+          GameState.firemakePending = true;
+          GameState.hud.addChatMessage('Click a tile to light a fire.', 'system');
+        },
+      });
+    }
+    options.push({
+      label: 'Drop ' + header,
+      color: 'white',
+      action: () => GameState.systems.inventory.removeAt(slot),
+    });
+
+    if (options.length > 0) {
+      GameState.hud.showContextMenu(x, y, options, header);
+    }
+  });
 }
 
 function handleLeftClick(event) {
@@ -1180,7 +1240,9 @@ function dropLoot(itemId, qty, tx, tz) {
   let mesh;
   if (itemId === 'coins')         mesh = createCoinDrop();
   else if (itemId === 'logs' || itemId === 'oak_logs') mesh = createLogDrop();
-  else if (itemId === 'raw_beef' || itemId === 'raw_chicken') mesh = createMeatDrop();
+  else if (itemId === 'raw_beef' || itemId === 'raw_chicken' ||
+           itemId === 'raw_shrimp' || itemId === 'raw_trout' || itemId === 'raw_salmon')
+    mesh = createMeatDrop();
   else if (itemId === 'bones' || itemId === 'big_bones') mesh = createBoneDrop();
   else                            mesh = createCoinDrop(); // generic fallback
 
