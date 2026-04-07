@@ -136,7 +136,45 @@ OSRS/
     systems/              # Combat, skills, inventory, save
     ui/                   # HUD, sidebar, chat, dialogs
     data/                 # Items, monsters, NPCs, quests, lore
+    server/               # Cloudflare Worker + D1 (server-side saves)
 ```
+
+---
+
+## Server-side saves (V0.1)
+
+Wyrdscape persists player state to a Cloudflare Worker backed by D1 SQLite,
+so a player can claim a username and pick up their character from any device.
+The frontend degrades gracefully — if the worker is unreachable it falls
+back to localStorage and the game keeps working.
+
+### Deploy the API (one-time)
+
+```bash
+cd src/server
+
+# 1. Authenticate (opens browser)
+wrangler login
+
+# 2. Create the D1 database — copy printed database_id into wrangler.toml
+wrangler d1 create wyrdscape
+
+# 3. Apply schema
+wrangler d1 execute wyrdscape --remote --file=schema.sql
+
+# 4. Deploy the worker
+wrangler deploy
+```
+
+After deploy, verify with:
+
+```bash
+curl https://wyrdscape-api.lordbasilaiassistant-sudo.workers.dev/api/health
+# -> {"ok":true,"service":"wyrdscape-api"}
+```
+
+If your subdomain differs, update `WYRDSCAPE_API_URL` in `src/systems/Save.js`.
+See `src/server/README.md` for full route docs.
 
 ---
 

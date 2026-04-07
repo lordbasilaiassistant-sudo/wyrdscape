@@ -1,0 +1,10 @@
+name = "wyrdscape-api"
+compatibility_date = "2024-01-01"
+main = "worker.js"
+
+# D1 database binding. After running `wrangler d1 create wyrdscape`,
+# copy the printed database_id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "wyrdscape"
+database_id = "REPLACE_WITH_DATABASE_ID_FROM_CREATE"

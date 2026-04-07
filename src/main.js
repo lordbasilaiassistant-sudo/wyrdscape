@@ -36,7 +36,10 @@ import {
 import {
   defaultInventory, addItem, removeItem, MAX_SLOTS,
 } from './systems/Inventory.js';
-import { saveGame, loadGame, clearSave } from './systems/Save.js';
+import {
+  saveGame, loadGame, clearSave,
+  saveGameRemote, loadGameRemote, claimUsername,
+} from './systems/Save.js';
 import { defaultPlayerState } from './systems/PlayerState.js';
 
 // ---- graphics -------------------------------------------------
@@ -46,6 +49,8 @@ import {
   createTreeModel, createOakTreeModel, createTreeStumpModel,
   createBuildingModel, createFenceModel,
   createLogDrop, createCoinDrop, createMeatDrop, createBoneDrop,
+  createRockNodeModel, createRockDepletedModel,
+  createFishingSpotModel, createCampfireModel,
 } from './graphics/models.js';
 import * as Effects from './graphics/effects.js';
 import { createAnimator } from './graphics/animations.js';
@@ -55,6 +60,10 @@ import ITEMS from './data/items.js';
 import MONSTERS, { rollDrops } from './data/monsters.js';
 import NPCS from './data/npcs.js';
 import QUESTS, { instantiateQuest } from './data/quests.js';
+import {
+  ROCK_NODES, FISHING_SPOTS, COOKING_RECIPES, FIREMAKING_LOGS,
+  cookingBurnChance, firemakingSuccessChance,
+} from './data/skillActions.js';
 
 // ---- ui -------------------------------------------------------
 import { createHUD } from './ui/HUD.js';
@@ -70,7 +79,12 @@ const LOGIC_TICK_MS  = 600;                            // OSRS-style fixed sim t
 const LOGIC_TICK_SEC = LOGIC_TICK_MS / 1000;
 const ATTACK_TICKS   = 4;                              // 4 ticks between swings
 const CHOP_TICKS     = 2;                              // 2 ticks between chop attempts
+const MINE_TICKS     = 2;                              // 2 ticks between mine attempts
+const FISH_TICKS     = 4;                              // 4 ticks between fish attempts
+const COOK_TICKS     = 2;                              // 2 ticks per cooked item
+const FIRE_TICKS     = 2;                              // 2 ticks per fire-light attempt
 const SAVE_TICKS     = 17;                             // ~10s autosave
+const FIRE_LIFETIME_MS = 60000;                        // campfire burns for 60s
 
 // Starter inventory uses these item ids (matches data/items.js)
 const STARTER_INVENTORY = [
@@ -110,6 +124,16 @@ const ITEM_COLORS = {
   wyrdstone_shard: '#9fdfff',
   edda_locket:     '#c0c0d0',
   map_fragment:    '#d8c8a0',
+  copper_ore:      '#b87333',
+  tin_ore:         '#9aa0a8',
+  iron_ore:        '#5a4538',
+  raw_shrimp:      '#f4a880',
+  cooked_shrimp:   '#e25c2c',
+  raw_trout:       '#789ab8',
+  cooked_trout:    '#c8a070',
+  raw_salmon:      '#e87d6a',
+  cooked_salmon:   '#d05030',
+  burnt_fish:      '#1c1c1c',
 };
 
 // Skill display name mapping: systems use lowercase internal names,
@@ -120,6 +144,10 @@ const SKILL_DISPLAY = {
   defence:     'Defence',
   hitpoints:   'Hitpoints',
   woodcutting: 'Woodcut',
+  mining:      'Mining',
+  fishing:     'Fishing',
+  cooking:     'Cooking',
+  firemaking:  'Firemaking',
 };
 
 // Spawn ID → data/npcs.js id bridge (Areas.js predates npcs.js)
@@ -158,8 +186,10 @@ export const GameState = {
   // gameplay entities
   npcs: [],             // [{ id, dataId, mesh, x, z, name }]
   monsters: [],         // [{ instanceId, dataId, mesh, x, z, hp, maxHp, spawnTile, respawnAt?, ai }]
-  resources: [],        // [{ id, kind:'tree'|'oakTree', mesh, x, z, stumpMesh?, respawnAt? }]
+  resources: [],        // [{ id, kind:'tree'|'oakTree'|'rock'|'fishingSpot', mesh, x, z, ... }]
   loot: [],             // [{ id, mesh, itemId, qty, x, z, expiresAt }]
+  fires: [],            // [{ id, mesh, x, z, expiresAt }] — active campfires
+  firemakePending: false, // set when player has clicked "Light Fire" on logs
 
   // systems + ui
   systems: {},          // populated by createSystems()
@@ -207,10 +237,16 @@ function isTileWalkable(tx, tz) {
   if (!w) return false;
   const type = w.tiles[tz][tx];
   if (!TILE_WALKABLE[type]) return false;
-  // Block on live (un-felled) trees
+  // Block on live (un-felled) trees and un-depleted rocks. Fishing
+  // spots live on water tiles which already fail TILE_WALKABLE.
   for (const r of GameState.resources) {
-    if (r.felled) continue;
+    if (r.felled || r.depleted) continue;
+    if (r.kind === 'fishingSpot') continue;
     if (r.x === tx && r.z === tz) return false;
+  }
+  // Block on active campfires
+  for (const f of GameState.fires) {
+    if (f.x === tx && f.z === tz) return false;
   }
   // Block on live monsters
   for (const m of GameState.monsters) {
@@ -228,23 +264,122 @@ function nextEntityId() {
 // BOOT
 // =============================================================
 
+// Login flow constants — username cached in localStorage between sessions.
+const USERNAME_LS_KEY = 'wyrdscape_username';
+const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
+
+function getCachedUsername() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const u = localStorage.getItem(USERNAME_LS_KEY);
+    return USERNAME_RE.test(u || '') ? u : null;
+  } catch (_e) { return null; }
+}
+
+function cacheUsername(name) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(USERNAME_LS_KEY, name);
+    }
+  } catch (_e) {}
+}
+
 function boot() {
+  const loading = document.getElementById('loading');
+  if (loading) loading.classList.add('hidden');
+
+  const cached = getCachedUsername();
+  if (cached) {
+    GameState.username = cached;
+    showIntro();
+  } else {
+    showLogin();
+  }
+}
+
+function showLogin() {
+  const loginModal = document.getElementById('login-modal');
+  const introModal = document.getElementById('intro-modal');
+  const input      = document.getElementById('login-username');
+  const button     = document.getElementById('login-btn');
+  const errBox     = document.getElementById('login-error');
+
+  if (introModal) introModal.classList.add('hidden');
+  if (!loginModal || !input || !button) {
+    console.warn('[Wyrdscape] login modal missing — proceeding anonymously');
+    GameState.username = null;
+    showIntro();
+    return;
+  }
+  loginModal.classList.remove('hidden');
+  input.value = '';
+  if (errBox) { errBox.textContent = ''; errBox.classList.add('hidden'); }
+  setTimeout(() => { try { input.focus(); } catch (_e) {} }, 50);
+
+  function showError(msg) {
+    if (!errBox) return;
+    errBox.textContent = msg;
+    errBox.classList.remove('hidden');
+  }
+
+  async function attemptLogin() {
+    const name = (input.value || '').trim();
+    if (!USERNAME_RE.test(name)) {
+      showError('3-20 letters, numbers, or underscore.');
+      return;
+    }
+    button.disabled = true;
+    showError('');
+    try {
+      const res = await claimUsername(name);
+      if (res.ok) {
+        cacheUsername(name);
+        GameState.username = name;
+        loginModal.classList.add('hidden');
+        showIntro();
+        return;
+      }
+      if (res.status === 409) {
+        showError('That name is taken. Try another.');
+      } else if (res.status === 0) {
+        // Network failure — server unreachable. Allow offline play.
+        console.warn('[Wyrdscape] server unreachable, playing offline');
+        cacheUsername(name);
+        GameState.username = name;
+        GameState.offlineMode = true;
+        loginModal.classList.add('hidden');
+        showIntro();
+      } else {
+        showError(res.error || 'Could not claim that name.');
+      }
+    } catch (e) {
+      showError('Login failed: ' + (e?.message || e));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  button.addEventListener('click', attemptLogin);
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') attemptLogin();
+  });
+}
+
+function showIntro() {
   const introModal = document.getElementById('intro-modal');
   const startBtn   = document.getElementById('start-btn');
-  const loading    = document.getElementById('loading');
-
-  if (loading) loading.textContent = 'Click "Enter World" to begin.';
 
   if (!startBtn) {
     console.error('[Wyrdscape] start button missing');
     return;
   }
+  if (introModal) introModal.classList.remove('hidden');
 
-  startBtn.addEventListener('click', () => {
+  startBtn.addEventListener('click', async () => {
     if (introModal) introModal.classList.add('hidden');
-    if (loading) loading.classList.add('hidden');
-    try { startGame(); }
-    catch (err) {
+    try {
+      await startGame();
+    } catch (err) {
       console.error('[Wyrdscape] boot error', err);
       showFatal(err);
     }
@@ -263,7 +398,7 @@ function showFatal(err) {
 // START GAME
 // =============================================================
 
-function startGame() {
+async function startGame() {
   const mount = document.getElementById('game-container');
   if (!mount) throw new Error('#game-container missing');
 
@@ -282,8 +417,18 @@ function startGame() {
   scene.add(terrain);
   GameState.terrain = terrain;
 
-  // ---- player data (with save load) ----
-  const savedPlayer = loadGame();
+  // ---- player data (try remote first, fall back to localStorage) ----
+  let savedPlayer = null;
+  if (GameState.username) {
+    try {
+      savedPlayer = await loadGameRemote(GameState.username);
+    } catch (e) {
+      console.warn('[Wyrdscape] remote load failed', e);
+      savedPlayer = loadGame();
+    }
+  } else {
+    savedPlayer = loadGame();
+  }
   const player = savedPlayer || defaultPlayerState();
   // Migrate legacy camelCase inventory items if loaded from old saves
   normalizeInventory(player);
@@ -471,15 +616,27 @@ function createSystems() {
       // Called once per LOGIC tick. Autosave is silent — players
       // don't want chat spam every 10 seconds. Manual saveNow()
       // shows a confirmation message because the player asked for it.
+      //
+      // Remote saves are fire-and-forget so the tick never blocks.
+      // Save.js writes to localStorage as a safety net first, then
+      // POSTs to the worker. Server failures degrade gracefully.
       update() {
         GameState.saveTickCounter++;
         if (GameState.saveTickCounter >= SAVE_TICKS) {
           GameState.saveTickCounter = 0;
-          saveGame(GameState.player);
+          if (GameState.username) {
+            saveGameRemote(GameState.username, GameState.player);
+          } else {
+            saveGame(GameState.player);
+          }
         }
       },
       saveNow() {
-        saveGame(GameState.player);
+        if (GameState.username) {
+          saveGameRemote(GameState.username, GameState.player);
+        } else {
+          saveGame(GameState.player);
+        }
         if (GameState.hud) GameState.hud.addChatMessage('Game saved.', 'system');
       },
       reset() { clearSave(); },
@@ -612,11 +769,49 @@ function spawnEntities(worldDef, scene) {
         levelReq: type === 'oakTree' ? 15 : 1,
       });
     }
+    else if (type === 'rock') {
+      const rockKey = spawn.rock || 'copper';
+      const def = ROCK_NODES[rockKey] || ROCK_NODES.copper;
+      const veinColor = ROCK_VEIN_COLORS[rockKey] ?? 0x9a6a4a;
+      const mesh = createRockNodeModel(veinColor);
+      mesh.position.set(pw.x, 0, pw.z);
+      mesh.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      scene.add(mesh);
+      GameState.resources.push({
+        id: nextEntityId(),
+        kind: 'rock',
+        rockKey,
+        mesh, x, z,
+        ore:      def.ore,
+        miningXp: def.xp,
+        levelReq: def.levelReq,
+      });
+    }
+    else if (type === 'fishingSpot') {
+      const mesh = createFishingSpotModel();
+      mesh.position.set(pw.x, 0, pw.z);
+      mesh.userData.spawnTime = performance.now();
+      scene.add(mesh);
+      GameState.resources.push({
+        id: nextEntityId(),
+        kind: 'fishingSpot',
+        spotKey: 'river',
+        mesh, x, z,
+      });
+    }
     else if (MONSTERS[type]) {
       spawnMonster(type, x, z, scene);
     }
   }
 }
+
+// Vein-color hint baked into each rock variant — gives the player
+// a cue without needing a label.
+const ROCK_VEIN_COLORS = {
+  copper: 0xb87333,
+  tin:    0x9aa0a8,
+  iron:   0x5a4538,
+};
 
 function spawnMonster(dataId, x, z, scene) {
   const def = MONSTERS[dataId];
@@ -686,6 +881,18 @@ function handleLeftClick(event) {
   // Raycast all scene children
   const hits = GameState.input.screenToWorld(event, GameState.scene);
   const pick = pickFirstInteractable(hits);
+
+  // Pending firemaking? Treat the next ground click as the fire site
+  if (GameState.firemakePending && (!pick || pick.kind === undefined)) {
+    const w = hits[0]?.point;
+    if (w) {
+      const t = worldToTile(w.x, w.z);
+      GameState.firemakePending = false;
+      beginFiremake(t.x, t.z);
+      return;
+    }
+  }
+
   if (!pick) return;
 
   if (pick.kind === 'monster') {
@@ -693,7 +900,7 @@ function handleLeftClick(event) {
   } else if (pick.kind === 'npc') {
     beginTalk(pick.entity);
   } else if (pick.kind === 'resource') {
-    beginChop(pick.entity);
+    beginResourceAction(pick.entity);
   } else if (pick.kind === 'loot') {
     beginPickup(pick.entity);
   } else {
@@ -706,6 +913,17 @@ function handleLeftClick(event) {
     const tw = tileToWorld(t.x, t.z);
     Effects.createTileSelectIndicator(GameState.scene,
       new THREE.Vector3(tw.x, 0.05, tw.z), TILE_SIZE * 0.9);
+  }
+}
+
+// Dispatch resource left-clicks based on the kind tagged at spawn.
+function beginResourceAction(resource) {
+  if (resource.kind === 'tree' || resource.kind === 'oakTree') {
+    beginChop(resource);
+  } else if (resource.kind === 'rock') {
+    beginMine(resource);
+  } else if (resource.kind === 'fishingSpot') {
+    beginFish(resource);
   }
 }
 
@@ -735,12 +953,29 @@ function handleRightClick(event) {
       action: () => beginTalk(pick.entity),
     });
   } else if (pick?.kind === 'resource') {
-    header = pick.entity.kind === 'oakTree' ? 'Oak Tree' : 'Tree';
-    options.push({
-      label: 'Chop ' + header,
-      color: 'yellow',
-      action: () => beginChop(pick.entity),
-    });
+    const r = pick.entity;
+    if (r.kind === 'tree' || r.kind === 'oakTree') {
+      header = r.kind === 'oakTree' ? 'Oak Tree' : 'Tree';
+      options.push({
+        label: 'Chop ' + header,
+        color: 'yellow',
+        action: () => beginChop(r),
+      });
+    } else if (r.kind === 'rock') {
+      header = (r.rockKey ? r.rockKey[0].toUpperCase() + r.rockKey.slice(1) : '') + ' Rock';
+      options.push({
+        label: 'Mine ' + header,
+        color: 'yellow',
+        action: () => beginMine(r),
+      });
+    } else if (r.kind === 'fishingSpot') {
+      header = 'Fishing Spot';
+      options.push({
+        label: 'Net ' + header,
+        color: 'yellow',
+        action: () => beginFish(r),
+      });
+    }
   } else if (pick?.kind === 'loot') {
     const def = ITEMS[pick.entity.itemId];
     header = def?.name || 'Item';
@@ -829,6 +1064,62 @@ function beginChop(resource) {
   if (!isAdjacent(GameState.player.x, GameState.player.z, resource.x, resource.z)) {
     walkTowardEntity(resource);
   }
+}
+
+function beginMine(resource) {
+  if (resource.depleted) return;
+  GameState.playerAction = { type: 'mine', targetId: resource.id };
+  if (!isAdjacent(GameState.player.x, GameState.player.z, resource.x, resource.z)) {
+    walkTowardEntity(resource);
+  }
+}
+
+function beginFish(resource) {
+  GameState.playerAction = { type: 'fish', targetId: resource.id };
+  if (!isAdjacent(GameState.player.x, GameState.player.z, resource.x, resource.z)) {
+    walkTowardEntity(resource);
+  }
+}
+
+// Light a fire on the specified tile. Player must be standing on
+// or adjacent to that tile and hold valid logs.
+function beginFiremake(tx, tz) {
+  const p = GameState.player;
+  if (!isTileWalkable(tx, tz)) {
+    GameState.hud.addChatMessage('You cannot light a fire there.', 'warning');
+    return;
+  }
+  if (!isAdjacent(p.x, p.z, tx, tz) && !(p.x === tx && p.z === tz)) {
+    GameState.hud.addChatMessage('You need to be next to that tile.', 'warning');
+    return;
+  }
+  // Find the first logs-type item the player holds
+  const inv = p.inventory;
+  let slotIdx = -1;
+  let logId = null;
+  for (let i = 0; i < inv.length; i++) {
+    if (inv[i] && FIREMAKING_LOGS[inv[i].id]) {
+      slotIdx = i;
+      logId = inv[i].id;
+      break;
+    }
+  }
+  if (slotIdx < 0) {
+    GameState.hud.addChatMessage('You have no logs to burn.', 'warning');
+    return;
+  }
+  const logDef = FIREMAKING_LOGS[logId];
+  const fm = p.skills.firemaking.level;
+  if (fm < logDef.levelReq) {
+    GameState.hud.addChatMessage('You need firemaking level ' + logDef.levelReq + ' to light these.', 'warning');
+    return;
+  }
+  GameState.playerAction = {
+    type: 'firemake',
+    tile: { x: tx, z: tz },
+    logId,
+    slotIdx,
+  };
 }
 
 function beginPickup(loot) {
@@ -967,6 +1258,262 @@ function tickChop() {
     }
   }
   GameState.playerAttackCD = CHOP_TICKS;
+}
+
+// =============================================================
+// MINING — rock nodes
+// =============================================================
+
+function tickMine() {
+  const action = GameState.playerAction;
+  if (!action || action.type !== 'mine') return;
+  const res = GameState.resources.find((r) => r.id === action.targetId);
+  if (!res || res.depleted) { GameState.playerAction = null; return; }
+  if (GameState.playerPath.length > 0) return;
+  if (!isAdjacent(GameState.player.x, GameState.player.z, res.x, res.z)) {
+    walkTowardEntity(res);
+    return;
+  }
+  if (GameState.playerAttackCD > 0) return;
+
+  facePlayerAt(res.x, res.z);
+
+  const miningLvl = GameState.player.skills.mining.level;
+  if (miningLvl < res.levelReq) {
+    GameState.hud.addChatMessage('You need mining level ' + res.levelReq + ' to mine this rock.', 'warning');
+    GameState.playerAction = null;
+    return;
+  }
+
+  const def = ROCK_NODES[res.rockKey] || ROCK_NODES.copper;
+  if (Math.random() < def.successChance(miningLvl)) {
+    const ok = GameState.systems.inventory.add(res.ore, 1);
+    if (ok) {
+      gainXp(GameState.player, 'mining', def.xp);
+      GameState.hud.updateStats(mapSkillsForUI(GameState.player.skills));
+      const oreDef = ITEMS[res.ore];
+      GameState.hud.addChatMessage('You get some ' + (oreDef?.name || 'ore').toLowerCase() + '.', 'game');
+
+      // Swap to depleted rock mesh, schedule respawn
+      GameState.scene.remove(res.mesh);
+      const rubble = createRockDepletedModel();
+      const pw = tileToWorld(res.x, res.z);
+      rubble.position.set(pw.x, 0, pw.z);
+      rubble.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      GameState.scene.add(rubble);
+      res.mesh = rubble;
+      res.depleted = true;
+      setTimeout(() => {
+        GameState.scene.remove(res.mesh);
+        const veinColor = ROCK_VEIN_COLORS[res.rockKey] ?? 0x9a6a4a;
+        const revive = createRockNodeModel(veinColor);
+        revive.position.set(pw.x, 0, pw.z);
+        revive.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        GameState.scene.add(revive);
+        res.mesh = revive;
+        res.depleted = false;
+      }, def.respawnMs);
+
+      GameState.playerAction = null;
+    } else {
+      GameState.hud.addChatMessage('Your inventory is full.', 'warning');
+      GameState.playerAction = null;
+    }
+  }
+  GameState.playerAttackCD = MINE_TICKS;
+}
+
+// =============================================================
+// FISHING — river spots (do not deplete)
+// =============================================================
+
+function tickFish() {
+  const action = GameState.playerAction;
+  if (!action || action.type !== 'fish') return;
+  const res = GameState.resources.find((r) => r.id === action.targetId);
+  if (!res) { GameState.playerAction = null; return; }
+  if (GameState.playerPath.length > 0) return;
+  if (!isAdjacent(GameState.player.x, GameState.player.z, res.x, res.z)) {
+    walkTowardEntity(res);
+    return;
+  }
+  if (GameState.playerAttackCD > 0) return;
+
+  facePlayerAt(res.x, res.z);
+
+  const fishingLvl = GameState.player.skills.fishing.level;
+  const def = FISHING_SPOTS[res.spotKey] || FISHING_SPOTS.river;
+  if (fishingLvl < def.levelReq) {
+    GameState.hud.addChatMessage('You need fishing level ' + def.levelReq + ' here.', 'warning');
+    GameState.playerAction = null;
+    return;
+  }
+
+  if (Math.random() < def.successChance(fishingLvl)) {
+    const catchRes = def.roll(fishingLvl);
+    const ok = GameState.systems.inventory.add(catchRes.fish, 1);
+    if (ok) {
+      gainXp(GameState.player, 'fishing', catchRes.xp);
+      GameState.hud.updateStats(mapSkillsForUI(GameState.player.skills));
+      const fishDef = ITEMS[catchRes.fish];
+      GameState.hud.addChatMessage('You catch a ' + (fishDef?.name || 'fish').toLowerCase() + '.', 'game');
+    } else {
+      GameState.hud.addChatMessage('Your inventory is full.', 'warning');
+      GameState.playerAction = null;
+      return;
+    }
+  }
+  // Spots never deplete — keep auto-fishing
+  GameState.playerAttackCD = FISH_TICKS;
+}
+
+// =============================================================
+// COOKING — raw food + adjacent fire
+// =============================================================
+
+// Begin cooking from an inventory slot (called from inventory ctx menu).
+function beginCook(slotIdx) {
+  const p = GameState.player;
+  const slot = p.inventory[slotIdx];
+  if (!slot) return;
+  const recipe = COOKING_RECIPES[slot.id];
+  if (!recipe) {
+    GameState.hud.addChatMessage('You cannot cook that.', 'warning');
+    return;
+  }
+  if (p.skills.cooking.level < recipe.levelReq) {
+    GameState.hud.addChatMessage('You need cooking level ' + recipe.levelReq + '.', 'warning');
+    return;
+  }
+  if (!isNearFire(p.x, p.z)) {
+    GameState.hud.addChatMessage('You must be next to a fire to cook.', 'warning');
+    return;
+  }
+  GameState.playerAction = { type: 'cook', slotIdx, rawId: slot.id };
+}
+
+function isNearFire(x, z) {
+  for (const f of GameState.fires) {
+    if (Math.abs(f.x - x) <= 1 && Math.abs(f.z - z) <= 1) return true;
+  }
+  return false;
+}
+
+function tickCook() {
+  const action = GameState.playerAction;
+  if (!action || action.type !== 'cook') return;
+  if (GameState.playerAttackCD > 0) return;
+
+  const p = GameState.player;
+  if (!isNearFire(p.x, p.z)) {
+    GameState.hud.addChatMessage('The fire has gone out.', 'warning');
+    GameState.playerAction = null;
+    return;
+  }
+  let slotIdx = -1;
+  for (let i = 0; i < p.inventory.length; i++) {
+    if (p.inventory[i] && p.inventory[i].id === action.rawId) {
+      slotIdx = i;
+      break;
+    }
+  }
+  if (slotIdx < 0) { GameState.playerAction = null; return; }
+
+  const recipe = COOKING_RECIPES[action.rawId];
+  if (!recipe) { GameState.playerAction = null; return; }
+
+  removeItem(p.inventory, slotIdx);
+
+  const burned = Math.random() < cookingBurnChance(recipe, p.skills.cooking.level);
+  if (burned) {
+    addItem(p.inventory, 'burnt_fish', 1, ITEMS);
+    const rawDef = ITEMS[action.rawId];
+    GameState.hud.addChatMessage('You burn the ' + (rawDef?.name || 'food').toLowerCase() + '.', 'warning');
+  } else {
+    addItem(p.inventory, recipe.cooked, 1, ITEMS);
+    gainXp(p, 'cooking', recipe.xp);
+    const cookedDef = ITEMS[recipe.cooked];
+    GameState.hud.addChatMessage('You cook the ' + (cookedDef?.name || 'food').toLowerCase() + '.', 'game');
+    GameState.hud.updateStats(mapSkillsForUI(p.skills));
+  }
+  GameState.hud.updateInventory(buildInventoryView(), itemLookup());
+
+  // Loop if more raw food of the same type remains
+  let hasMore = false;
+  for (const s of p.inventory) {
+    if (s && s.id === action.rawId) { hasMore = true; break; }
+  }
+  if (!hasMore) GameState.playerAction = null;
+  GameState.playerAttackCD = COOK_TICKS;
+}
+
+// =============================================================
+// FIREMAKING — light fires on walkable tiles
+// =============================================================
+
+function tickFire() {
+  const action = GameState.playerAction;
+  if (!action || action.type !== 'firemake') return;
+  if (GameState.playerAttackCD > 0) return;
+
+  const p = GameState.player;
+  const { tile, logId } = action;
+  if (!isAdjacent(p.x, p.z, tile.x, tile.z) && !(p.x === tile.x && p.z === tile.z)) {
+    return; // wait for player to walk closer
+  }
+  let slotIdx = -1;
+  for (let i = 0; i < p.inventory.length; i++) {
+    if (p.inventory[i] && p.inventory[i].id === logId) { slotIdx = i; break; }
+  }
+  if (slotIdx < 0) { GameState.playerAction = null; return; }
+
+  if (!isTileWalkable(tile.x, tile.z)) {
+    GameState.hud.addChatMessage('You cannot light a fire there.', 'warning');
+    GameState.playerAction = null;
+    return;
+  }
+
+  const logDef = FIREMAKING_LOGS[logId];
+  const fmLvl = p.skills.firemaking.level;
+  const success = Math.random() < firemakingSuccessChance(logDef, fmLvl);
+
+  if (success) {
+    removeItem(p.inventory, slotIdx);
+    const mesh = createCampfireModel();
+    const pw = tileToWorld(tile.x, tile.z);
+    mesh.position.set(pw.x, 0, pw.z);
+    mesh.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    GameState.scene.add(mesh);
+    GameState.fires.push({
+      id: nextEntityId(),
+      mesh,
+      x: tile.x, z: tile.z,
+      expiresAt: GameState.elapsed + (logDef.burnMs / 1000),
+    });
+    gainXp(p, 'firemaking', logDef.xp);
+    GameState.hud.updateStats(mapSkillsForUI(p.skills));
+    GameState.hud.updateInventory(buildInventoryView(), itemLookup());
+    GameState.hud.addChatMessage('The fire catches and burns.', 'game');
+    GameState.playerAction = null;
+  }
+  GameState.playerAttackCD = FIRE_TICKS;
+}
+
+// Campfires burn out when their timer expires.
+function tickFires() {
+  for (let i = GameState.fires.length - 1; i >= 0; i--) {
+    const f = GameState.fires[i];
+    if (GameState.elapsed >= f.expiresAt) {
+      GameState.scene.remove(f.mesh);
+      GameState.fires.splice(i, 1);
+    } else if (f.mesh.flameMesh) {
+      const wob = 0.9 + Math.random() * 0.25;
+      f.mesh.flameMesh.scale.y = wob;
+      if (f.mesh.innerFlameMesh) {
+        f.mesh.innerFlameMesh.scale.y = 0.85 + Math.random() * 0.3;
+      }
+    }
+  }
 }
 
 // =============================================================
@@ -1173,9 +1720,14 @@ function runLogicTick() {
 
   // Skill action ticks
   if (typeof tickChop === 'function') tickChop();
+  if (typeof tickMine === 'function') tickMine();
+  if (typeof tickFish === 'function') tickFish();
+  if (typeof tickCook === 'function') tickCook();
+  if (typeof tickFire === 'function') tickFire();
 
   // Item interaction ticks
   if (typeof tickPickup === 'function') tickPickup();
+  if (typeof tickFires === 'function') tickFires();
 
   // Monster AI ticks (wander cadence, aggro check)
   if (typeof tickMonsters === 'function') tickMonsters();
@@ -1229,4 +1781,23 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);
 } else {
   boot();
+}
+
+// Best-effort final save when the player closes the tab.
+// We can't await on `beforeunload`, but the localStorage write
+// inside saveGameRemote runs synchronously first as a safety net,
+// and the fetch is fired with keepalive so the browser will try
+// to flush it after the tab dies.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    try {
+      if (GameState && GameState.player) {
+        if (GameState.username) {
+          saveGameRemote(GameState.username, GameState.player);
+        } else {
+          saveGame(GameState.player);
+        }
+      }
+    } catch (_e) {}
+  });
 }

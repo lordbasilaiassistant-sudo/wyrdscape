@@ -214,6 +214,78 @@ html, body {
 
 #start-btn:active { transform: translateY(1px); }
 
+/* ---- Login modal (server-side persistence) -------------------- */
+
+.login-modal-content {
+  text-align: center;
+  max-width: 420px;
+}
+
+#login-username {
+  display: block;
+  margin: 18px auto 8px;
+  width: 80%;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 18px;
+  letter-spacing: 1px;
+  color: var(--text-cream);
+  background: #1a1109;
+  border: 2px solid #a07838;
+  border-radius: 4px;
+  text-align: center;
+  outline: none;
+}
+
+#login-username:focus {
+  border-color: #c89850;
+  box-shadow: 0 0 12px var(--panel-glow);
+}
+
+#login-username::placeholder {
+  color: #6a5538;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.login-error {
+  color: #ff8a4a;
+  font-size: 14px;
+  margin: 6px 0 0;
+  min-height: 18px;
+}
+
+.login-error.hidden { display: none; }
+
+#login-btn {
+  display: block;
+  margin: 18px auto 0;
+  padding: 12px 36px;
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--text-cream);
+  background: linear-gradient(180deg, #6b4520, #3d2810);
+  border: 2px solid #a07838;
+  border-radius: 4px;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #000;
+  font-family: inherit;
+  letter-spacing: 1px;
+}
+
+#login-btn:hover {
+  background: linear-gradient(180deg, #8b5a28, #5a3818);
+  border-color: #c89850;
+  box-shadow: 0 0 12px var(--panel-glow);
+}
+
+#login-btn:active { transform: translateY(1px); }
+
+#login-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
 /* ---- Generic panel/button helpers (used by ui modules) -------- */
 
 .panel {
