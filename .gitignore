@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+.vscode/
+.idea/
+*.swp
+.cache/
+dist/
+build/
+
+# Internal/legacy — not part of the deployed game
+legacy_2d/
+OSRS_REFERENCE.md
+dev-server.js

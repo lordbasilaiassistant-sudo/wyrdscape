@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wyrdscape — A 3D Browser MMORPG</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="game-wrapper">
+  <div id="game-container"></div>
+  <div id="loading">Loading Wyrdscape...</div>
+</div>
+
+<!-- HTML overlay above the canvas (populated by src/ui/HUD.js) -->
+<div id="ui-overlay"></div>
+
+<!-- HUD scaffold kept for legacy engine code; ui-builder uses #ui-overlay -->
+<div id="hud" class="hidden">
+  <div id="hud-top-left"></div>
+  <div id="hud-top-right"></div>
+  <div id="hud-bottom-left"></div>
+  <div id="hud-bottom-right"></div>
+</div>
+
+<!-- Tooltip (populated by src/ui/* modules) -->
+<div id="tooltip" class="hidden"></div>
+
+<!-- Intro modal -->
+<div id="intro-modal" class="modal">
+  <div class="modal-content">
+    <h1>WYRDSCAPE</h1>
+    <p class="subtitle">A 3D browser MMORPG of the Wyrd Lands</p>
+    <p><b>How to play:</b></p>
+    <ul>
+      <li><b>Left-click</b> the ground to walk there</li>
+      <li><b>Left-click</b> trees, rocks, monsters, NPCs to interact</li>
+      <li><b>Right-click</b> objects for a context menu of actions</li>
+      <li><b>Arrow Left / Right</b> rotate the camera</li>
+      <li><b>Arrow Up / Down</b> tilt the camera</li>
+      <li><b>+ / -</b> zoom in and out</li>
+      <li>Tabs on the right show <b>Stats</b>, <b>Inventory</b>, and <b>Skills</b></li>
+      <li>Game auto-saves to your browser every 10 seconds</li>
+    </ul>
+    <p><small>Vertical slice — pure procedural 3D, no downloads, no install.</small></p>
+    <button id="start-btn">Enter World</button>
+  </div>
+</div>
+
+<!-- Single ES module entry point -->
+<script type="module" src="src/main.js"></script>
+
+</body>
+</html>
