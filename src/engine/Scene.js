@@ -41,7 +41,7 @@ export function createScene(mount) {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.25;
 
   if (mount) {
     // Replace any existing canvas if we are remounted (HMR safety).
@@ -56,11 +56,13 @@ export function createScene(mount) {
 
   // ---- Lights ------------------------------------------------
   // Soft hemisphere fill — sky color above, warm ground below.
-  const ambLight = new THREE.HemisphereLight(0xb8d4ff, 0x4a3422, 0.85);
+  // Boosted from 0.85 → 1.4 because building interiors and shadowed
+  // areas were rendering nearly black on the live build.
+  const ambLight = new THREE.HemisphereLight(0xc8dcff, 0x6a5028, 1.4);
   scene.add(ambLight);
 
   // Key directional light — warm sun, soft shadows.
-  const dirLight = new THREE.DirectionalLight(0xfff1c8, 1.05);
+  const dirLight = new THREE.DirectionalLight(0xfff1c8, 1.35);
   dirLight.position.set(40, 60, 30);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.set(2048, 2048);

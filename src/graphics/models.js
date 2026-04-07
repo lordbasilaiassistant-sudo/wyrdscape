@@ -103,33 +103,61 @@ export function createPlayerModel(options = {}) {
   const hairMat  = _matFor(options.hairColor)  || MAT.hair;
   const legMat   = _matFor(options.legColor)   || MAT.leatherBrown;
 
-  // Legs (two side-by-side)
-  const lLeg = mesh(GEO.legBox, legMat);
-  lLeg.position.set(-0.18, 0.425, 0);
-  const rLeg = mesh(GEO.legBox, legMat);
-  rLeg.position.set( 0.18, 0.425, 0);
+  // Limbs use a "pivot group at the joint + child mesh offset downward"
+  // pattern so the Animator can rotate them around the top (shoulder/hip)
+  // instead of the box center. Without this, rotating a limb would swing
+  // its center through the body.
+
+  // Legs (two side-by-side). Hip pivots at y=0.85, leg hangs below.
+  const lLeg = new THREE.Group();
+  lLeg.name = 'leftLeg';
+  lLeg.position.set(-0.18, 0.85, 0);
+  const lLegMesh = mesh(GEO.legBox, legMat);
+  lLegMesh.position.y = -0.425;
+  lLeg.add(lLegMesh);
+
+  const rLeg = new THREE.Group();
+  rLeg.name = 'rightLeg';
+  rLeg.position.set(0.18, 0.85, 0);
+  const rLegMesh = mesh(GEO.legBox, legMat);
+  rLegMesh.position.y = -0.425;
+  rLeg.add(rLegMesh);
 
   // Torso
   const torso = mesh(GEO.torsoBox, tunicMat);
+  torso.name = 'body';
   torso.position.set(0, 1.30, 0);
 
-  // Arms
-  const lArm = mesh(GEO.armBox, tunicMat);
-  lArm.position.set(-0.46, 1.30, 0);
-  const rArm = mesh(GEO.armBox, tunicMat);
-  rArm.position.set( 0.46, 1.30, 0);
+  // Arms. Shoulder pivots at y=1.725, arm hangs below.
+  const lArm = new THREE.Group();
+  lArm.name = 'leftArm';
+  lArm.position.set(-0.46, 1.725, 0);
+  const lArmMesh = mesh(GEO.armBox, tunicMat);
+  lArmMesh.position.y = -0.425;
+  lArm.add(lArmMesh);
+
+  const rArm = new THREE.Group();
+  rArm.name = 'rightArm';
+  rArm.position.set(0.46, 1.725, 0);
+  const rArmMesh = mesh(GEO.armBox, tunicMat);
+  rArmMesh.position.y = -0.425;
+  rArm.add(rArmMesh);
 
   // Head + hair cap
   const head = mesh(GEO.headBox, MAT.skin);
+  head.name = 'head';
   head.position.set(0, 2.05, 0);
   const hair = mesh(GEO.hairCap, hairMat);
+  hair.name = 'hair';
   hair.position.set(0, 2.40, 0);
 
   g.add(lLeg, rLeg, torso, lArm, rArm, head, hair);
 
-  // Optional weapon — a short bronze-pommel steel sword in the right hand
+  // Optional weapon — parented to the right arm pivot so it follows arm
+  // swings automatically during walk/attack animations.
   if (options.hasSword) {
     const sword = new THREE.Group();
+    sword.name = 'sword';
     const blade = mesh(new THREE.BoxGeometry(0.08, 0.7, 0.04), MAT.metalSteel);
     blade.position.y = 0.35;
     const guard = mesh(new THREE.BoxGeometry(0.22, 0.06, 0.06), MAT.metalBronze);
@@ -137,10 +165,11 @@ export function createPlayerModel(options = {}) {
     const grip = mesh(new THREE.BoxGeometry(0.06, 0.16, 0.06), MAT.leatherBrown);
     grip.position.y = -0.10;
     sword.add(blade, guard, grip);
-    // Position so the grip sits in the right hand and the blade points down/out
-    sword.position.set(0.62, 0.95, 0.05);
+    // Sword is held in the hand at the bottom of the right arm (~y=-0.775 in
+    // arm-pivot local space). Angled slightly outward.
+    sword.position.set(0.16, -0.775, 0.05);
     sword.rotation.z = Math.PI / 8;
-    g.add(sword);
+    rArm.add(sword);
   }
 
   return g;
@@ -154,25 +183,50 @@ export function createGoblinModel() {
   const g = new THREE.Group();
   g.name = 'goblin';
 
-  const lLeg = mesh(GEO.legBox, MAT.leatherBrown);
-  lLeg.position.set(-0.15, 0.35, 0);
-  lLeg.scale.set(0.85, 0.8, 0.85);
-  const rLeg = mesh(GEO.legBox, MAT.leatherBrown);
-  rLeg.position.set( 0.15, 0.35, 0);
-  rLeg.scale.set(0.85, 0.8, 0.85);
+  // Goblin limbs use the same pivot-group pattern as the player so the
+  // animator can rotate them around the joint.
+  const gobLegY = 0.68; // ~0.85 * 0.8 scaled leg length = 0.68 hip height
+  const lLeg = new THREE.Group();
+  lLeg.name = 'leftLeg';
+  lLeg.position.set(-0.15, gobLegY, 0);
+  const lLegMesh = mesh(GEO.legBox, MAT.leatherBrown);
+  lLegMesh.position.y = -0.34;
+  lLegMesh.scale.set(0.85, 0.8, 0.85);
+  lLeg.add(lLegMesh);
+
+  const rLeg = new THREE.Group();
+  rLeg.name = 'rightLeg';
+  rLeg.position.set(0.15, gobLegY, 0);
+  const rLegMesh = mesh(GEO.legBox, MAT.leatherBrown);
+  rLegMesh.position.y = -0.34;
+  rLegMesh.scale.set(0.85, 0.8, 0.85);
+  rLeg.add(rLegMesh);
 
   const torso = mesh(GEO.torsoBox, MAT.leatherBrown);
+  torso.name = 'body';
   torso.position.set(0, 1.05, 0);
   torso.scale.set(0.85, 0.85, 0.85);
 
-  const lArm = mesh(GEO.armBox, MAT.goblinGreen);
-  lArm.position.set(-0.40, 1.05, 0);
-  lArm.scale.set(0.9, 0.85, 0.9);
-  const rArm = mesh(GEO.armBox, MAT.goblinGreen);
-  rArm.position.set( 0.40, 1.05, 0);
-  rArm.scale.set(0.9, 0.85, 0.9);
+  // Shoulder pivots ~= torso top (~1.05 + 0.45*0.85 = ~1.43)
+  const gobArmY = 1.43;
+  const lArm = new THREE.Group();
+  lArm.name = 'leftArm';
+  lArm.position.set(-0.40, gobArmY, 0);
+  const lArmMesh = mesh(GEO.armBox, MAT.goblinGreen);
+  lArmMesh.position.y = -0.36;
+  lArmMesh.scale.set(0.9, 0.85, 0.9);
+  lArm.add(lArmMesh);
+
+  const rArm = new THREE.Group();
+  rArm.name = 'rightArm';
+  rArm.position.set(0.40, gobArmY, 0);
+  const rArmMesh = mesh(GEO.armBox, MAT.goblinGreen);
+  rArmMesh.position.y = -0.36;
+  rArmMesh.scale.set(0.9, 0.85, 0.9);
+  rArm.add(rArmMesh);
 
   const head = mesh(GEO.headBox, MAT.goblinGreen);
+  head.name = 'head';
   head.position.set(0, 1.70, 0);
   head.scale.set(0.85, 0.85, 0.85);
 
@@ -201,23 +255,31 @@ export function createCowModel() {
 
   // Body
   const body = mesh(GEO.cowBody, MAT.cowWhite);
+  body.name = 'body';
   body.position.set(0, 0.95, 0);
 
-  // 4 legs (brown)
-  const legPositions = [
-    [-0.55, 0.35,  0.30],
-    [ 0.55, 0.35,  0.30],
-    [-0.55, 0.35, -0.30],
-    [ 0.55, 0.35, -0.30],
+  // 4 legs (brown). Each leg is a pivot group at the hip with a mesh
+  // hanging below — same pattern as humanoids, so the animator can
+  // rotate each leg around its hip.
+  const legSpecs = [
+    { name: 'frontLeftLeg',  pos: [-0.55, 0.70,  0.30] },
+    { name: 'frontRightLeg', pos: [ 0.55, 0.70,  0.30] },
+    { name: 'backLeftLeg',   pos: [-0.55, 0.70, -0.30] },
+    { name: 'backRightLeg',  pos: [ 0.55, 0.70, -0.30] },
   ];
-  const legs = legPositions.map(([x, y, z]) => {
+  const legs = legSpecs.map(({ name, pos }) => {
+    const pivot = new THREE.Group();
+    pivot.name = name;
+    pivot.position.set(pos[0], pos[1], pos[2]);
     const l = mesh(GEO.cowLeg, MAT.leatherBrown);
-    l.position.set(x, y, z);
-    return l;
+    l.position.y = -0.35;
+    pivot.add(l);
+    return pivot;
   });
 
   // Head (front of body, +X side)
   const head = mesh(GEO.cowHead, MAT.cowWhite);
+  head.name = 'head';
   head.position.set(0.95, 1.05, 0);
 
   // Horns (two small cones on top of head)
@@ -252,9 +314,11 @@ export function createChickenModel() {
   g.name = 'chicken';
 
   const body = mesh(GEO.chickenBody, MAT.chickenWhite);
+  body.name = 'body';
   body.position.set(0, 0.40, 0);
 
   const head = mesh(GEO.chickenHead, MAT.chickenWhite);
+  head.name = 'head';
   head.position.set(0.20, 0.70, 0);
 
   const comb = mesh(GEO.chickenComb, MAT.chickenRed);
@@ -265,8 +329,10 @@ export function createChickenModel() {
   beak.rotation.z = -Math.PI / 2;
 
   const lLeg = mesh(GEO.chickenLeg, MAT.beak);
+  lLeg.name = 'leftLeg';
   lLeg.position.set(-0.05, 0.10,  0.08);
   const rLeg = mesh(GEO.chickenLeg, MAT.beak);
+  rLeg.name = 'rightLeg';
   rLeg.position.set(-0.05, 0.10, -0.08);
 
   g.add(body, head, comb, beak, lLeg, rLeg);
@@ -326,6 +392,151 @@ export function createTreeStumpModel() {
 }
 
 // =============================================================
+// MINING / FISHING / FIREMAKING props
+// =============================================================
+
+/**
+ * Rock node for mining. Chunky gray cylinder with a bumpy top.
+ * Optional oreColor tints a small visible vein so players can tell
+ * copper / tin / iron apart at a glance.
+ */
+export function createRockNodeModel(oreColor = 0x9a6a4a) {
+  const g = new THREE.Group();
+  g.name = 'rock-node';
+
+  const baseGeo = new THREE.CylinderGeometry(0.7, 0.85, 1.0, 8);
+  const base = mesh(baseGeo, MAT.stoneGrey);
+  base.position.y = 0.5;
+  g.add(base);
+
+  // Bumpy top — two small boxes skewed to look chiseled
+  const bumpGeo = new THREE.BoxGeometry(0.45, 0.25, 0.45);
+  const bump1 = mesh(bumpGeo, MAT.stoneGrey);
+  bump1.position.set(-0.15, 1.1, 0.1);
+  bump1.rotation.y = 0.35;
+  g.add(bump1);
+
+  const bump2 = mesh(bumpGeo, MAT.stoneGrey);
+  bump2.position.set(0.2, 1.05, -0.1);
+  bump2.rotation.y = -0.25;
+  g.add(bump2);
+
+  // Ore vein — small colored cube embedded in the rock
+  const veinGeo = new THREE.BoxGeometry(0.22, 0.18, 0.22);
+  const veinMat = new THREE.MeshLambertMaterial({ color: oreColor });
+  const vein = new THREE.Mesh(veinGeo, veinMat);
+  vein.position.set(0.05, 0.9, 0.35);
+  vein.castShadow = true;
+  g.add(vein);
+
+  return g;
+}
+
+/**
+ * Depleted rock — flat gray rubble left after mining, replaced
+ * with a fresh node after respawn.
+ */
+export function createRockDepletedModel() {
+  const g = new THREE.Group();
+  g.name = 'rock-depleted';
+
+  const rubbleGeo = new THREE.CylinderGeometry(0.7, 0.8, 0.3, 8);
+  const rubble = mesh(rubbleGeo, MAT.stoneGrey);
+  rubble.position.y = 0.15;
+  g.add(rubble);
+
+  return g;
+}
+
+/**
+ * Fishing spot — flat cyan disc just above the water surface.
+ */
+export function createFishingSpotModel() {
+  const g = new THREE.Group();
+  g.name = 'fishing-spot';
+
+  const ringGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.04, 16);
+  const ringMat = new THREE.MeshLambertMaterial({
+    color: 0x9fdfff,
+    transparent: true,
+    opacity: 0.75,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.y = 0.18;
+  g.add(ring);
+
+  const innerGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.05, 12);
+  const innerMat = new THREE.MeshLambertMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.6,
+  });
+  const inner = new THREE.Mesh(innerGeo, innerMat);
+  inner.position.y = 0.2;
+  g.add(inner);
+
+  return g;
+}
+
+/**
+ * Campfire — stacked logs with a red/orange flame cone on top.
+ * The flame mesh is exposed via g.flameMesh for per-frame flicker.
+ */
+export function createCampfireModel() {
+  const g = new THREE.Group();
+  g.name = 'campfire';
+
+  // Stacked crossed logs
+  const logGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.9, 6);
+  const log1 = mesh(logGeo, MAT.logBrown);
+  log1.position.set(0, 0.14, 0);
+  log1.rotation.z = Math.PI / 2;
+  g.add(log1);
+
+  const log2 = mesh(logGeo, MAT.logBrown);
+  log2.position.set(0, 0.14, 0);
+  log2.rotation.x = Math.PI / 2;
+  g.add(log2);
+
+  // Glowing embers ring
+  const emberGeo = new THREE.CylinderGeometry(0.45, 0.5, 0.08, 10);
+  const emberMat = new THREE.MeshLambertMaterial({
+    color: 0x7a1a08,
+    emissive: 0x5a0c04,
+  });
+  const embers = new THREE.Mesh(emberGeo, emberMat);
+  embers.position.y = 0.04;
+  g.add(embers);
+
+  // Outer flame cone
+  const flameGeo = new THREE.ConeGeometry(0.4, 0.9, 6);
+  const flameMat = new THREE.MeshLambertMaterial({
+    color: 0xff8030,
+    emissive: 0xff5010,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const flame = new THREE.Mesh(flameGeo, flameMat);
+  flame.position.y = 0.7;
+  flame.castShadow = false;
+  g.add(flame);
+
+  // Inner brighter flame
+  const innerFlameGeo = new THREE.ConeGeometry(0.22, 0.55, 5);
+  const innerFlameMat = new THREE.MeshLambertMaterial({
+    color: 0xffe060,
+    emissive: 0xffc040,
+  });
+  const innerFlame = new THREE.Mesh(innerFlameGeo, innerFlameMat);
+  innerFlame.position.y = 0.85;
+  g.add(innerFlame);
+
+  g.flameMesh = flame;
+  g.innerFlameMesh = innerFlame;
+  return g;
+}
+
+// =============================================================
 // BUILDINGS / STRUCTURES
 // =============================================================
 
@@ -342,29 +553,50 @@ export function createBuildingModel(width = 4, depth = 4, height = 3) {
   const g = new THREE.Group();
   g.name = 'building';
 
-  // Wood floor — slightly inset and lifted just above ground level
+  // Wood plank floor visible from above through the open top.
   const floorGeo = new THREE.BoxGeometry(width, 0.12, depth);
   const floor = mesh(floorGeo, MAT.logBrown);
   floor.position.set(0, 0.06, 0);
   floor.receiveShadow = true;
+  g.add(floor);
 
-  // Stone walls — single box body. Stone gray reads as
-  // a chunky cottage from a distance.
-  const wallsGeo = new THREE.BoxGeometry(width, height, depth);
-  const walls = mesh(wallsGeo, MAT.stoneGrey);
-  walls.position.set(0, 0.12 + height / 2, 0);
-  walls.receiveShadow = true;
+  // Four thin stone walls instead of a solid box, so the iso
+  // camera looks down INTO the room — like an OSRS building
+  // with the roof culled. Each wall is a thin BoxGeometry.
+  const wallThick = 0.18;
+  const wallY = 0.12 + height / 2;
+  const wallMat = MAT.stoneGrey;
 
-  // Conical roof — a 4-sided pyramid sitting on top of the walls,
-  // wider than the walls so it casts a slight overhang shadow.
-  const roofRadius = Math.max(width, depth) * 0.78;
-  const roofHeight = height * 0.85;
-  const roofGeo = new THREE.ConeGeometry(roofRadius, roofHeight, 4);
-  const roof = mesh(roofGeo, MAT.oakTrunkDark);
-  roof.position.set(0, 0.12 + height + roofHeight / 2, 0);
-  roof.rotation.y = Math.PI / 4;     // align flat sides with walls
+  // North wall (at +Z edge)
+  const nWall = mesh(new THREE.BoxGeometry(width, height, wallThick), wallMat);
+  nWall.position.set(0, wallY, depth / 2 - wallThick / 2);
+  nWall.castShadow = true; nWall.receiveShadow = true;
 
-  g.add(floor, walls, roof);
+  // South wall (at -Z edge) — leave a 1-unit doorway gap centered
+  const doorW = Math.min(1.4, width * 0.35);
+  const sideW = (width - doorW) / 2;
+  if (sideW > 0.1) {
+    const sLeft = mesh(new THREE.BoxGeometry(sideW, height, wallThick), wallMat);
+    sLeft.position.set(-(doorW / 2 + sideW / 2), wallY, -(depth / 2 - wallThick / 2));
+    sLeft.castShadow = true;
+    g.add(sLeft);
+    const sRight = mesh(new THREE.BoxGeometry(sideW, height, wallThick), wallMat);
+    sRight.position.set( (doorW / 2 + sideW / 2), wallY, -(depth / 2 - wallThick / 2));
+    sRight.castShadow = true;
+    g.add(sRight);
+  }
+
+  // East wall
+  const eWall = mesh(new THREE.BoxGeometry(wallThick, height, depth), wallMat);
+  eWall.position.set(width / 2 - wallThick / 2, wallY, 0);
+  eWall.castShadow = true; eWall.receiveShadow = true;
+
+  // West wall
+  const wWall = mesh(new THREE.BoxGeometry(wallThick, height, depth), wallMat);
+  wWall.position.set(-(width / 2 - wallThick / 2), wallY, 0);
+  wWall.castShadow = true; wWall.receiveShadow = true;
+
+  g.add(nWall, eWall, wWall);
   return g;
 }
 
