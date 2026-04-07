@@ -1117,22 +1117,43 @@ function tickLoot() {
 }
 
 // =============================================================
-// MAIN LOOP
+// MAIN LOOP — OSRS-style fixed tick + smooth rAF visuals
+// =============================================================
+//
+// All gameplay logic (combat, movement, AI, skill actions, save)
+// runs on the 600ms LOGIC_TICK boundary inside runLogicTick().
+// All visuals (camera lerp, mesh tween, water animation, effects,
+// HUD updates, renderer) run every animation frame in tick().
+//
+// This matches OSRS exactly: tick-perfect actions, consistent
+// rhythm, smooth visuals between ticks.
 // =============================================================
 
-// Hot-fix: tick() called tickPlayerMovement(dt) but it was never
-// defined, which crashed the entire rAF loop on the first frame.
-// This wrapper drives the per-frame visual tween every rAF and
-// accumulates dt to step the OSRS-style logic tick every 600ms.
 let _logicTickAccum = 0;
-function tickPlayerMovement(dt) {
-  tweenPlayerVisual();
-  _logicTickAccum += dt;
-  while (_logicTickAccum >= LOGIC_TICK_SEC) {
-    _logicTickAccum -= LOGIC_TICK_SEC;
-    stepPlayerLogic();
-    GameState.tickCount++;
-  }
+
+function runLogicTick() {
+  GameState.tickCount++;
+
+  // Player one-tile-per-tick movement
+  stepPlayerLogic();
+
+  // Combat resolves on tick (cooldowns are in tick units)
+  if (GameState.systems?.combat?.update) GameState.systems.combat.update();
+
+  // Skill action ticks
+  if (typeof tickChop === 'function') tickChop();
+
+  // Item interaction ticks
+  if (typeof tickPickup === 'function') tickPickup();
+
+  // Monster AI ticks (wander cadence, aggro check)
+  if (typeof tickMonsters === 'function') tickMonsters();
+
+  // Ground item expiry (counted in ticks)
+  if (typeof tickLoot === 'function') tickLoot();
+
+  // Autosave check (counted in ticks)
+  if (GameState.systems?.save?.update) GameState.systems.save.update();
 }
 
 function tick() {
@@ -1141,28 +1162,26 @@ function tick() {
   GameState.dt = dt;
   GameState.elapsed += dt;
 
-  // Engine
+  // ---- per-frame engine (input + camera) ----
   GameState.input.update(dt);
-  tickPlayerMovement(dt);
   GameState.camera.update(dt);
 
-  // World
+  // ---- OSRS-style fixed logic tick ----
+  _logicTickAccum += dt;
+  // Cap to avoid spiral-of-death after long pause/freeze
+  if (_logicTickAccum > LOGIC_TICK_SEC * 5) _logicTickAccum = LOGIC_TICK_SEC * 5;
+  while (_logicTickAccum >= LOGIC_TICK_SEC) {
+    _logicTickAccum -= LOGIC_TICK_SEC;
+    runLogicTick();
+  }
+
+  // ---- per-frame visuals (smooth between ticks) ----
+  tweenPlayerVisual();
   if (GameState.terrain?.update) GameState.terrain.update(dt);
-
-  // Systems
-  GameState.systems.combat.update(dt);
-  tickChop(dt);
-  tickPickup();
-  tickMonsters(dt);
-  tickLoot();
-  GameState.systems.save.update(dt);
-
-  // Graphics effects (hit splats, click marker pulses)
   Effects.update(dt);
-
-  // UI
   if (GameState.ui?.update) GameState.ui.update(dt, GameState.elapsed);
 
+  // ---- render ----
   GameState.renderer.render(GameState.scene, GameState.threeCam);
   requestAnimationFrame(tick);
 }
