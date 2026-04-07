@@ -288,13 +288,16 @@ function boot() {
   const loading = document.getElementById('loading');
   if (loading) loading.classList.add('hidden');
 
-  const cached = getCachedUsername();
-  if (cached) {
-    GameState.username = cached;
-    showIntro();
-  } else {
-    showLogin();
-  }
+  // Wyrdscape is a public open-source game on GitHub Pages — no
+  // backend, no accounts, no login. Saves go to localStorage.
+  // showLogin() and the login modal are intentionally unused;
+  // the server-side path is kept in src/server/ as optional
+  // self-host docs only.
+  GameState.username = null;
+  GameState.offlineMode = true;
+  const loginModal = document.getElementById('login-modal');
+  if (loginModal) loginModal.classList.add('hidden');
+  showIntro();
 }
 
 function showLogin() {
