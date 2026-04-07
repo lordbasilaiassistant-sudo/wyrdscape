@@ -20,6 +20,7 @@ export const TILE_TYPES = {
   SAND:       'SAND',
   WATER:      'WATER',
   WOOD_FLOOR: 'WOOD_FLOOR',
+  WALL:       'WALL',        // building walls — non-walkable, dark wood
 };
 
 // Base colors per tile type
@@ -31,6 +32,7 @@ const TILE_COLORS = {
   SAND:       new THREE.Color(0xd9c186),
   WATER:      new THREE.Color(0x1c3a6b),
   WOOD_FLOOR: new THREE.Color(0x8a5a30),
+  WALL:       new THREE.Color(0x4a3828), // dark wood/stone wall
 };
 
 // Walkable lookup (re-exported for convenience to other systems)
@@ -42,6 +44,7 @@ export const TILE_WALKABLE = {
   SAND:       true,
   WATER:      false,
   WOOD_FLOOR: true,
+  WALL:       false,
 };
 
 // ------------------------------------------------------------

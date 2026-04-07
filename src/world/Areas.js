@@ -45,10 +45,36 @@ export function defineWorld() {
   // ----------------------------------------------------------
   // Base dirt path platform
   fillRect(5, 5, 15, 15, TILE_TYPES.DIRT);
-  // Two wooden buildings — quest hall and bank-ish structure
-  fillRect(6, 6, 9, 9, TILE_TYPES.WOOD_FLOOR);   // building #1
-  fillRect(11, 6, 14, 9, TILE_TYPES.WOOD_FLOOR); // building #2
-  fillRect(7, 11, 13, 14, TILE_TYPES.WOOD_FLOOR);// long hall
+
+  // ----- Buildings ----------------------------------------------------
+  // Each building is a rectangle whose PERIMETER tiles are TILE.WALL
+  // (non-walkable) and whose INTERIOR tiles are WOOD_FLOOR (walkable),
+  // with exactly one south-edge tile left as WOOD_FLOOR for the doorway.
+  // This way the existing isWalkable check (which already rejects
+  // non-walkable types) automatically routes pathfinding around buildings.
+  // --------------------------------------------------------------------
+  const buildPerimeter = (x1, z1, x2, z2, doorX) => {
+    for (let z = z1; z <= z2; z++) {
+      for (let x = x1; x <= x2; x++) {
+        const onPerimeter = (x === x1 || x === x2 || z === z1 || z === z2);
+        if (onPerimeter) {
+          setTile(x, z, TILE_TYPES.WALL);
+        } else {
+          setTile(x, z, TILE_TYPES.WOOD_FLOOR);
+        }
+      }
+    }
+    // Carve south doorway — one tile of the south edge becomes floor
+    setTile(doorX, z2, TILE_TYPES.WOOD_FLOOR);
+  };
+
+  // Building #1 — small house, NW of plaza (priest's lodge in lore)
+  buildPerimeter(6, 6, 9, 9, /*doorX=*/8);
+  // Building #2 — small house, NE of plaza (bank in lore)
+  buildPerimeter(11, 6, 14, 9, /*doorX=*/12);
+  // Long hall — south of plaza, where the player spawns
+  buildPerimeter(7, 11, 13, 14, /*doorX=*/10);
+
   // Stone plaza in front (PATH_STONE — the smoothed paving look)
   fillRect(9, 10, 11, 10, TILE_TYPES.PATH_STONE);
 
@@ -118,12 +144,13 @@ export function defineWorld() {
 
   // ---- Ambient NPC spawns to make the town feel populated ----
   // (lore-writer is defining these IDs; the world just places them
-  // in plausible spots — plaza, hall doorways, building corners)
-  spawns.push({ x: 9,  z: 11, type: 'npc', npcId: 'ambientGuard'    }); // plaza guard
-  spawns.push({ x: 11, z: 11, type: 'npc', npcId: 'ambientMerchant' }); // plaza merchant
-  spawns.push({ x: 8,  z: 13, type: 'npc', npcId: 'ambientFarmer'   }); // walking near hall
-  spawns.push({ x: 13, z: 7,  type: 'npc', npcId: 'ambientBanker'   }); // building #2 doorway
-  spawns.push({ x: 7,  z: 7,  type: 'npc', npcId: 'ambientPriest'   }); // building #1 doorway
+  // in plausible WALKABLE interior tiles — long hall + the two side
+  // buildings have small interiors, so the NPCs cluster inside)
+  spawns.push({ x: 9,  z: 12, type: 'npc', npcId: 'ambientGuard'    }); // long hall interior
+  spawns.push({ x: 11, z: 12, type: 'npc', npcId: 'ambientMerchant' }); // long hall interior
+  spawns.push({ x: 8,  z: 13, type: 'npc', npcId: 'ambientFarmer'   }); // long hall interior
+  spawns.push({ x: 13, z: 7,  type: 'npc', npcId: 'ambientBanker'   }); // building #2 interior
+  spawns.push({ x: 7,  z: 7,  type: 'npc', npcId: 'ambientPriest'   }); // building #1 interior
 
   // ---- Cow field: trees as fence + cows + chickens ----
   // Tree fence around x=35..50, z=5..20 perimeter (sparse).
