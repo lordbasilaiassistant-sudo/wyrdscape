@@ -9,7 +9,7 @@
 
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
-export const WORLD_SIZE = 60;     // tiles per side
+export const WORLD_SIZE = 30;     // tiles per side
 export const TILE_SIZE = 2;       // world units per tile
 
 export const TILE_TYPES = {

@@ -1,9 +1,15 @@
 // ============================================================
-// Areas.js — Hand-crafted Wyrdscape world map
+// Areas.js — Hearthmoor Village (Wyrdscape world map)
 // ============================================================
-// Defines a 60x60 tile world with: starter town (NW),
-// cow field (NE), tree grove (SW), goblin camp (SE),
-// north-south river through the middle and a bridge.
+// A polished 30x30 tile world. One small village in the middle
+// with surrounding wilderness:
+//   - Hearthmoor Village (center): plaza, well, 5 buildings,
+//     ambient NPCs, partial stone walls
+//   - North:  Brookside farm (cows + chickens)
+//   - East:   river bank with 2 fishing spots + footbridge
+//   - South:  tree grove (woodcutting)
+//   - West:   rocky hills with mineable rocks + goblin camp
+// Roads of stone & dirt connect every region.
 // ============================================================
 
 import { WORLD_SIZE, TILE_TYPES } from './Terrain.js';
@@ -35,24 +41,36 @@ export function defineWorld() {
   };
 
   // ----------------------------------------------------------
-  // RIVER — runs north-south through the middle, columns 25-28
-  // (the bridge will punch through it later)
+  // RIVER — east side, runs north-south (columns 25-26)
   // ----------------------------------------------------------
-  fillRect(25, 0, 28, WORLD_SIZE - 1, TILE_TYPES.WATER);
+  fillRect(25, 0, 26, WORLD_SIZE - 1, TILE_TYPES.WATER);
 
   // ----------------------------------------------------------
-  // STARTER TOWN (Lumbridge-style) — NW corner, x=5..15, z=5..15
+  // ROCKY HILLS — west strip (columns 0-3), sprinkled stone
   // ----------------------------------------------------------
-  // Base dirt path platform
-  fillRect(5, 5, 15, 15, TILE_TYPES.DIRT);
+  for (let z = 0; z < WORLD_SIZE; z++) {
+    for (let x = 0; x <= 3; x++) {
+      const h = ((x * 73856093) ^ (z * 19349663)) >>> 0;
+      if ((h % 100) < 55) setTile(x, z, TILE_TYPES.STONE);
+    }
+  }
 
-  // ----- Buildings ----------------------------------------------------
-  // Each building is a rectangle whose PERIMETER tiles are TILE.WALL
-  // (non-walkable) and whose INTERIOR tiles are WOOD_FLOOR (walkable),
-  // with exactly one south-edge tile left as WOOD_FLOOR for the doorway.
-  // This way the existing isWalkable check (which already rejects
-  // non-walkable types) automatically routes pathfinding around buildings.
-  // --------------------------------------------------------------------
+  // ----------------------------------------------------------
+  // HEARTHMOOR VILLAGE — center, x=12..22, z=12..22
+  // ----------------------------------------------------------
+  // Base village ground: dirt with central plaza of stone paving
+  fillRect(12, 12, 22, 22, TILE_TYPES.DIRT);
+
+  // Central plaza (PATH_STONE) — 3x3 with the stone well at center
+  fillRect(16, 16, 18, 18, TILE_TYPES.PATH_STONE);
+  // Stone well in plaza center — represented as a STONE tile
+  // (decorative, walkable around but not over)
+  setTile(17, 17, TILE_TYPES.STONE);
+
+  // ----- Buildings -------------------------------------------
+  // Each building: perimeter = WALL (non-walkable), interior =
+  // WOOD_FLOOR (walkable), one south doorway carved out.
+  // ----------------------------------------------------------
   const buildPerimeter = (x1, z1, x2, z2, doorX) => {
     for (let z = z1; z <= z2; z++) {
       for (let x = x1; x <= x2; x++) {
@@ -68,178 +86,242 @@ export function defineWorld() {
     setTile(doorX, z2, TILE_TYPES.WOOD_FLOOR);
   };
 
-  // Building #1 — small house, NW of plaza (priest's lodge in lore)
-  buildPerimeter(6, 6, 9, 9, /*doorX=*/8);
-  // Building #2 — small house, NE of plaza (bank in lore)
-  buildPerimeter(11, 6, 14, 9, /*doorX=*/12);
-  // Long hall — south of plaza, where the player spawns
-  buildPerimeter(7, 11, 13, 14, /*doorX=*/10);
+  // Building #1 — Chapel (NW of plaza)
+  // 4 wide, 4 deep, door faces south toward plaza
+  buildPerimeter(12, 12, 15, 15, /*doorX=*/14);
 
-  // Stone plaza in front (PATH_STONE — the smoothed paving look)
-  fillRect(9, 10, 11, 10, TILE_TYPES.PATH_STONE);
+  // Building #2 — Bank / Longhall (NE of plaza)
+  // 4 wide, 4 deep, door faces south
+  buildPerimeter(19, 12, 22, 15, /*doorX=*/20);
 
-  // ----------------------------------------------------------
-  // COW FIELD — NE, x=35..50, z=5..20
-  // ----------------------------------------------------------
-  // Already grass; we just put trees on the perimeter as a fence
-  // and place cow + chicken spawns inside.
-  // ----------------------------------------------------------
-  // GOBLIN CAMP — SE, x=40..55, z=40..55
-  // ----------------------------------------------------------
-  fillRect(40, 40, 55, 55, TILE_TYPES.DIRT);
-  // Sprinkle stone deterministically (no Math.random — repeatable layout)
-  for (let z = 40; z <= 55; z++) {
-    for (let x = 40; x <= 55; x++) {
-      // simple deterministic hash
-      const h = ((x * 73856093) ^ (z * 19349663)) >>> 0;
-      if ((h % 100) < 22) setTile(x, z, TILE_TYPES.STONE);
-    }
+  // Building #3 — General Store (SW of plaza)
+  // 4 wide, 4 deep, door at top facing plaza (north doorway exception)
+  buildPerimeter(12, 19, 15, 22, /*doorX=*/14);
+  // Override: also open north side toward plaza
+  setTile(14, 19, TILE_TYPES.WOOD_FLOOR);
+
+  // Building #4 — Smithy (SE of plaza)
+  buildPerimeter(19, 19, 22, 22, /*doorX=*/20);
+  // Smithy has a north opening too (to the plaza)
+  setTile(20, 19, TILE_TYPES.WOOD_FLOOR);
+
+  // Building #5 — Inn (south, below plaza, slightly larger)
+  // Centered below the plaza, doorway facing the plaza (north side)
+  // We use a perimeter with south door, then carve a north door instead.
+  buildPerimeter(16, 20, 18, 22, /*doorX=*/17);
+  // Open the north side onto the plaza
+  setTile(17, 20, TILE_TYPES.WOOD_FLOOR);
+  // Re-close the south doorway carved by the helper
+  setTile(17, 22, TILE_TYPES.WALL);
+
+  // ----- Partial stone walls bordering the village -----------
+  // Top wall (north edge of village), with a gap for the road
+  for (let x = 11; x <= 23; x++) {
+    if (x === 17) continue;             // gap for the north road
+    setTile(x, 11, TILE_TYPES.WALL);
+  }
+  // Bottom wall (south edge), with a gap for the south road
+  for (let x = 11; x <= 23; x++) {
+    if (x === 17) continue;             // gap for the south road
+    setTile(x, 23, TILE_TYPES.WALL);
+  }
+  // West wall (left edge), with a gap for the west road
+  for (let z = 11; z <= 23; z++) {
+    if (z === 17) continue;             // gap for the west road
+    setTile(11, z, TILE_TYPES.WALL);
+  }
+  // East wall (right edge), with a gap for the east road
+  for (let z = 11; z <= 23; z++) {
+    if (z === 17) continue;             // gap for the east road
+    setTile(23, z, TILE_TYPES.WALL);
   }
 
   // ----------------------------------------------------------
-  // BRIDGE — wood floor across the river at z=30
-  // The river is x=25..28, so bridge spans those four tiles.
-  // Spec says "3 WOOD_FLOOR tiles at z=30" — we honor the count
-  // by using 3 of the 4 river columns and leaving column 28 as
-  // water (a stepping-stone style 3-tile bridge).
+  // ROADS — connect village to all outlying regions
   // ----------------------------------------------------------
-  setTile(25, 30, TILE_TYPES.WOOD_FLOOR);
-  setTile(26, 30, TILE_TYPES.WOOD_FLOOR);
-  setTile(27, 30, TILE_TYPES.WOOD_FLOOR);
-  setTile(28, 30, TILE_TYPES.WOOD_FLOOR); // include column 28 too so the bridge spans the full river
-  // Approach tiles either side
-  setTile(24, 30, TILE_TYPES.DIRT);
-  setTile(29, 30, TILE_TYPES.DIRT);
+  // North road: village gate (17,11) → farm (z=2)
+  for (let z = 2; z <= 11; z++) setTile(17, z, TILE_TYPES.PATH_STONE);
+  // South road: village gate (17,23) → tree grove (z=28)
+  for (let z = 23; z <= 28; z++) setTile(17, z, TILE_TYPES.PATH_STONE);
+  // West road: village gate (11,17) → rocky hills / mines (x=4)
+  for (let x = 4; x <= 11; x++) setTile(x, 17, TILE_TYPES.PATH_STONE);
+  // East road: village gate (23,17) → river bridge (x=27)
+  for (let x = 23; x <= 24; x++) setTile(x, 17, TILE_TYPES.PATH_STONE);
+  for (let x = 27; x <= 29; x++) setTile(x, 17, TILE_TYPES.PATH_STONE);
+
+  // Make sure plaza connects to all four village gates internally
+  // (vertical and horizontal corridors of dirt through the village)
+  for (let z = 12; z <= 22; z++) setTile(17, z, TILE_TYPES.DIRT);
+  for (let x = 12; x <= 22; x++) setTile(x, 17, TILE_TYPES.DIRT);
+  // Re-stamp plaza tiles (they were just overwritten)
+  fillRect(16, 16, 18, 18, TILE_TYPES.PATH_STONE);
+  setTile(17, 17, TILE_TYPES.STONE); // well
 
   // ----------------------------------------------------------
-  // PATH_STONE connecting all regions (the iconic smoothed
-  // gray paving — the look of the OSRS Grand Exchange tiles)
+  // BRIDGE — wood plank crossing over the river at z=17
+  // River is x=25..26, so a 2-tile bridge.
   // ----------------------------------------------------------
-  // Town → bridge (east along z=12, then south to z=30, then east over bridge)
-  for (let x = 15; x <= 24; x++) setTile(x, 12, TILE_TYPES.PATH_STONE);
-  for (let z = 12; z <= 30; z++) setTile(24, z, TILE_TYPES.PATH_STONE);
-  // After bridge → continue east into cow field & south to goblin camp
-  for (let z = 12; z <= 30; z++) setTile(29, z, TILE_TYPES.PATH_STONE);
-  for (let x = 29; x <= 40; x++) setTile(x, 12, TILE_TYPES.PATH_STONE); // to cow field
-  for (let x = 29; x <= 40; x++) setTile(x, 40, TILE_TYPES.PATH_STONE); // to goblin camp
-  for (let z = 30; z <= 40; z++) setTile(40, z, TILE_TYPES.PATH_STONE);
+  setTile(25, 17, TILE_TYPES.WOOD_FLOOR);
+  setTile(26, 17, TILE_TYPES.WOOD_FLOOR);
 
-  // Town → tree grove (south along x=12)
-  for (let z = 15; z <= 35; z++) setTile(12, z, TILE_TYPES.PATH_STONE);
-  for (let x = 12; x <= 20; x++) setTile(x, 35, TILE_TYPES.PATH_STONE);
+  // ----------------------------------------------------------
+  // BROOKSIDE FARM — north grass field, z=2..10, x=8..22
+  // ----------------------------------------------------------
+  // Wooden fence using DIRT trim around the farm interior so
+  // the area visually reads as enclosed pasture.
+  // (Grass underfoot is already in place.)
+  // Small dirt patch around the farm gate (north end of road)
+  fillRect(16, 2, 18, 3, TILE_TYPES.DIRT);
 
-  // Make sure the bridge planks weren't overwritten by the path logic above
-  setTile(25, 30, TILE_TYPES.WOOD_FLOOR);
-  setTile(26, 30, TILE_TYPES.WOOD_FLOOR);
-  setTile(27, 30, TILE_TYPES.WOOD_FLOOR);
-  setTile(28, 30, TILE_TYPES.WOOD_FLOOR);
+  // ----------------------------------------------------------
+  // TREE GROVE — south, z=24..29, x=4..28
+  // ----------------------------------------------------------
+  // Sprinkle a little dirt scrub through the grove to make it
+  // feel like a forest floor instead of a perfect lawn.
+  for (let z = 24; z <= 29; z++) {
+    for (let x = 4; x <= 28; x++) {
+      // Don't overwrite the south road
+      if (x === 17 && z <= 28) continue;
+      const h = ((x * 12345 + 67) ^ (z * 89012 + 345)) >>> 0;
+      if ((h % 100) < 18) setTile(x, z, TILE_TYPES.DIRT);
+    }
+  }
+  // Re-stamp the south road just in case
+  for (let z = 23; z <= 28; z++) setTile(17, z, TILE_TYPES.PATH_STONE);
+
+  // ----------------------------------------------------------
+  // GOBLIN CAMP — west, behind a hill (x=0..7, z=22..28)
+  // Small dirt clearing among the rocky hills.
+  // ----------------------------------------------------------
+  fillRect(2, 23, 7, 28, TILE_TYPES.DIRT);
 
   // ----------------------------------------------------------
   // SPAWNS
   // ----------------------------------------------------------
   const spawns = [];
 
-  // ---- Quest-giver NPC inside the town hall ----
-  spawns.push({ x: 10, z: 12, type: 'npc', npcId: 'questGiverHans' });
+  // ---- Quest-giver NPC at the village inn ----
+  spawns.push({ x: 17, z: 21, type: 'npc', npcId: 'questGiverHans' });
 
-  // ---- Ambient NPC spawns to make the town feel populated ----
-  // (lore-writer is defining these IDs; the world just places them
-  // in plausible WALKABLE interior tiles — long hall + the two side
-  // buildings have small interiors, so the NPCs cluster inside)
-  spawns.push({ x: 9,  z: 12, type: 'npc', npcId: 'ambientGuard'    }); // long hall interior
-  spawns.push({ x: 11, z: 12, type: 'npc', npcId: 'ambientMerchant' }); // long hall interior
-  spawns.push({ x: 8,  z: 13, type: 'npc', npcId: 'ambientFarmer'   }); // long hall interior
-  spawns.push({ x: 13, z: 7,  type: 'npc', npcId: 'ambientBanker'   }); // building #2 interior
-  spawns.push({ x: 7,  z: 7,  type: 'npc', npcId: 'ambientPriest'   }); // building #1 interior
+  // ---- Ambient NPCs scattered through the village ----
+  // Priest in the chapel
+  spawns.push({ x: 14, z: 14, type: 'npc', npcId: 'ambientPriest' });
+  // Banker in the bank/longhall
+  spawns.push({ x: 20, z: 14, type: 'npc', npcId: 'ambientBanker' });
+  // Shopkeeper in the general store
+  spawns.push({ x: 14, z: 21, type: 'npc', npcId: 'ambientMerchant' });
+  // Smith in the smithy
+  spawns.push({ x: 20, z: 21, type: 'npc', npcId: 'ambientSmith' });
+  // Innkeeper inside the inn
+  spawns.push({ x: 17, z: 22, type: 'npc', npcId: 'ambientInnkeeper' });
+  // Guard at the north village gate
+  spawns.push({ x: 17, z: 12, type: 'npc', npcId: 'ambientGuard' });
+  // Farmer wandering near the plaza
+  spawns.push({ x: 18, z: 18, type: 'npc', npcId: 'ambientFarmer' });
+  // Kid playing near the well
+  spawns.push({ x: 16, z: 18, type: 'npc', npcId: 'ambientKid' });
 
-  // ---- Cow field: trees as fence + cows + chickens ----
-  // Tree fence around x=35..50, z=5..20 perimeter (sparse).
-  const cowFenceTrees = [
-    // top edge (z=5)
-    [35, 5], [37, 5], [39, 5], [41, 5], [43, 5], [45, 5], [47, 5], [49, 5],
-    // bottom edge (z=20)
-    [35, 20], [37, 20], [39, 20], [41, 20], [43, 20], [45, 20], [47, 20], [49, 20],
-    // left edge (x=35)
-    [35, 7], [35, 9], [35, 11], [35, 13], [35, 15], [35, 17],
-    // right edge (x=50)
-    [50, 7], [50, 9], [50, 11], [50, 13], [50, 15], [50, 17],
-  ];
-  for (const [x, z] of cowFenceTrees) {
-    spawns.push({ x, z, type: 'tree' });
-  }
-  // Cows (6) inside the field
+  // ---- Brookside farm: cows + chickens ----
+  // 4 cows in the north grass field
   const cowPositions = [
-    [38, 8], [42, 9], [45, 11], [40, 14], [44, 16], [47, 13],
+    [10, 5], [13, 7], [20, 5], [22, 8],
   ];
   for (const [x, z] of cowPositions) {
     spawns.push({ x, z, type: 'cow' });
   }
-  // Chickens (4)
-  const chickenPositions = [[37, 12], [41, 17], [46, 8], [48, 18]];
+  // 3 chickens
+  const chickenPositions = [[12, 4], [15, 9], [21, 6]];
   for (const [x, z] of chickenPositions) {
     spawns.push({ x, z, type: 'chicken' });
   }
 
-  // ---- Tree grove (SW): 18 tree spawns ----
-  // Mostly normal trees, a few oak trees mixed in for variety.
+  // ---- Tree grove (south): 12 trees, 3 oaks ----
   const groveTrees = [
-    [6, 36], [8, 38], [5, 40], [9, 42], [7, 44], [11, 36],
-    [13, 39], [15, 41], [17, 37], [19, 43], [10, 46], [14, 47],
-    [6, 48], [12, 49], [16, 45], [18, 48], [8, 50], [20, 38],
+    [5, 25],  [7, 27],  [9, 24],  [11, 26],
+    [14, 28], [19, 25], [21, 27], [23, 24],
+    [24, 28], // east end of grove (just west of the river)
+    // The 3 oaks
+    [8, 26],  [13, 25], [22, 28],
   ];
-  let oakCounter = 0;
+  let i = 0;
   for (const [x, z] of groveTrees) {
-    // Every 6th is an oak
-    const type = (oakCounter++ % 6 === 5) ? 'oakTree' : 'tree';
+    // Last 3 entries are the oaks
+    const type = (i >= groveTrees.length - 3) ? 'oakTree' : 'tree';
     spawns.push({ x, z, type });
+    i++;
   }
 
-  // ---- Goblin camp (SE): 5 goblins ----
+  // ---- Rocky hills (west): 4 mineable rocks ----
+  const rockPositions = [
+    { x: 2, z: 8,  rock: 'copper' },
+    { x: 1, z: 12, rock: 'tin' },
+    { x: 3, z: 15, rock: 'iron' },
+    { x: 2, z: 19, rock: 'copper' },
+  ];
+  for (const { x, z, rock } of rockPositions) {
+    setTile(x, z, TILE_TYPES.DIRT);   // clear the spot for the rock
+    spawns.push({ x, z, type: 'rock', rock });
+  }
+
+  // ---- Goblin camp (west, tucked in the hills): 4 goblins ----
   const goblinPositions = [
-    [44, 44], [48, 46], [46, 50], [52, 48], [50, 53],
+    [3, 24], [5, 25], [4, 27], [6, 26],
   ];
   for (const [x, z] of goblinPositions) {
     spawns.push({ x, z, type: 'goblin' });
   }
 
-  // ---- Quarry (SW of goblin camp): 5 rock nodes ----
-  // Small cluster of mineable rocks on the dirt south-east of
-  // the bridge approach. Mix copper / tin / iron so the player
-  // has variety from level 1.
-  const rockPositions = [
-    { x: 33, z: 38, rock: 'copper' },
-    { x: 34, z: 39, rock: 'copper' },
-    { x: 32, z: 40, rock: 'tin' },
-    { x: 35, z: 41, rock: 'tin' },
-    { x: 33, z: 42, rock: 'iron' },
-  ];
-  // Stamp dirt under the rocks so the area reads as a quarry
-  for (const { x, z } of rockPositions) {
-    setTile(x, z, TILE_TYPES.DIRT);
-  }
-  for (const { x, z, rock } of rockPositions) {
-    spawns.push({ x, z, type: 'rock', rock });
-  }
-
-  // ---- Fishing spots: 3 along the river bank (east side) ----
-  // Spots sit on the actual water tile so the player walks up
-  // to column 29 (dirt approach) to fish them. Players left-
-  // click the spot, then walk to the adjacent land tile.
+  // ---- Fishing spots: 2 on the river east of the village ----
   const fishingPositions = [
-    { x: 28, z: 18 },
-    { x: 28, z: 25 },
-    { x: 28, z: 38 },
+    { x: 25, z: 10 },
+    { x: 25, z: 22 },
   ];
   for (const { x, z } of fishingPositions) {
     spawns.push({ x, z, type: 'fishingSpot' });
-    // Make sure the adjacent east tile is walkable dirt approach
-    setTile(29, z, TILE_TYPES.DIRT);
+    // Carve a dirt approach tile west of each spot so the player
+    // can walk up to the bank to fish.
+    setTile(24, z, TILE_TYPES.DIRT);
+  }
+
+  // ---- Giant rats: 3 along the east river bank ----
+  // Lurking in the damp grass on the far side of the river,
+  // away from the bridge. Easy XP for level 1-3 players.
+  const giantRatPositions = [
+    [27, 8],
+    [28, 21],
+    [27, 25],
+  ];
+  for (const [x, z] of giantRatPositions) {
+    spawns.push({ x, z, type: 'giant_rat' });
+  }
+
+  // ---- Bandits: 2 on the south road exit ----
+  // Road thieves waiting on the south trade road past the village
+  // gate. Mid-difficulty (level 5-10 players).
+  const banditPositions = [
+    [17, 26],
+    [16, 28],
+  ];
+  for (const [x, z] of banditPositions) {
+    spawns.push({ x, z, type: 'bandit' });
+  }
+
+  // ---- Wolves: 2 in the south tree grove ----
+  // Greyback wolves stalking the edges of the forest. Spread out
+  // east + west of the road so the player meets them on either
+  // side of the grove. Mid-tier monster.
+  const wolfPositions = [
+    [10, 27],
+    [24, 26],
+  ];
+  for (const [x, z] of wolfPositions) {
+    spawns.push({ x, z, type: 'wolf' });
   }
 
   // ----------------------------------------------------------
-  // Spawn point: middle of starter town
+  // Spawn point: village plaza, just south of the well
   // ----------------------------------------------------------
-  const spawnPoint = { x: 12, z: 12 };
+  const spawnPoint = { x: 17, z: 18 };
 
   return { tiles, spawns, spawnPoint };
 }
