@@ -461,17 +461,21 @@ function createSystems() {
     },
 
     save: {
-      // Called once per LOGIC tick.
+      // Called once per LOGIC tick. Autosave is silent — players
+      // don't want chat spam every 10 seconds. Manual saveNow()
+      // shows a confirmation message because the player asked for it.
       update() {
         GameState.saveTickCounter++;
         if (GameState.saveTickCounter >= SAVE_TICKS) {
           GameState.saveTickCounter = 0;
           saveGame(GameState.player);
-          GameState.hud.addChatMessage('Game saved.', 'system');
         }
       },
-      saveNow() { saveGame(GameState.player); },
-      reset()   { clearSave(); },
+      saveNow() {
+        saveGame(GameState.player);
+        if (GameState.hud) GameState.hud.addChatMessage('Game saved.', 'system');
+      },
+      reset() { clearSave(); },
     },
   };
 }
@@ -567,11 +571,13 @@ function spawnEntities(worldDef, scene) {
     if (type === 'npc') {
       const dataId = NPC_ID_BRIDGE[npcId] || npcId;
       const def = NPCS[dataId];
-      // Use a goblin model as stand-in for humans? No — use player model
-      // with different colors so NPCs look human.
-      const mesh = createPlayerModel({
-        tunicColor: 0x5a3a1f, hairColor: 0x2a1a08, legColor: 0x3a2a18,
-      });
+      // Quest-giving NPCs get warm brown tunics; ambient
+      // village folk (no definition in NPCS) get a muted gray
+      // so the player can read at a glance who's interactive.
+      const colors = def
+        ? { tunicColor: 0x5a3a1f, hairColor: 0x2a1a08, legColor: 0x3a2a18 }
+        : { tunicColor: 0x6a6a6a, hairColor: 0x3a2810, legColor: 0x4a4a4a };
+      const mesh = createPlayerModel(colors);
       mesh.position.set(pw.x, 0, pw.z);
       mesh.rotation.y = Math.PI;
       mesh.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -579,7 +585,8 @@ function spawnEntities(worldDef, scene) {
       GameState.npcs.push({
         id: nextEntityId(),
         dataId,
-        name: def?.name || 'Stranger',
+        name: def?.name || 'Villager',
+        ambient: !def,
         mesh, x, z,
       });
     }
@@ -960,7 +967,9 @@ function tickChop() {
 function openDialogue(npc) {
   const def = NPCS[npc.dataId];
   if (!def) {
-    GameState.hud.addChatMessage(npc.name + ' has nothing to say.', 'game');
+    // Ambient villagers without dialogue data get a friendly default.
+    GameState.hud.addChatMessage('<' + (npc.name || 'Villager') + '> Hello, traveller.', 'game');
+    GameState.playerAction = null;
     return;
   }
   const node = def.dialogue[0];
@@ -1110,6 +1119,21 @@ function tickLoot() {
 // =============================================================
 // MAIN LOOP
 // =============================================================
+
+// Hot-fix: tick() called tickPlayerMovement(dt) but it was never
+// defined, which crashed the entire rAF loop on the first frame.
+// This wrapper drives the per-frame visual tween every rAF and
+// accumulates dt to step the OSRS-style logic tick every 600ms.
+let _logicTickAccum = 0;
+function tickPlayerMovement(dt) {
+  tweenPlayerVisual();
+  _logicTickAccum += dt;
+  while (_logicTickAccum >= LOGIC_TICK_SEC) {
+    _logicTickAccum -= LOGIC_TICK_SEC;
+    stepPlayerLogic();
+    GameState.tickCount++;
+  }
+}
 
 function tick() {
   if (!GameState.running) return;
