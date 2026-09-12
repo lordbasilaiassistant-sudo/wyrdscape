@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Wyrdscape">
+  <rect width="64" height="64" rx="14" fill="#11151c"/>
+  <rect x="3" y="3" width="58" height="58" rx="12" fill="none" stroke="#7c3aed" stroke-width="3"/>
+  <text x="32" y="44" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="34" font-weight="700" fill="#7c3aed">W</text>
+</svg>
